@@ -1,6 +1,6 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { makeScene } from './scene';
-import { resolutions } from './project';
+import { formats, resolutions } from './project';
 
 const ffmpeg = new FFmpeg();
 
@@ -28,17 +28,25 @@ const capture = (canvas) => new Promise((resolve, reject) => {
 });
 
 export async function renderVideo(text, settings, report) {
-  await loadEngine();
   await document.fonts.ready;
   const { width, height } = resolutions[settings.resolution];
+  const { container, mime } = formats[settings.format];
+  const outputFile = `present-fflow.${settings.format}`;
   const canvas = document.createElement('canvas');
   Object.assign(canvas, { width, height });
   const draw = makeScene(canvas, text, settings);
   const frameCount = Math.ceil(settings.fps * settings.duration);
   const animatedFrames = Math.min(frameCount, Math.ceil(settings.fps * text.seconds) + 1);
+  if (settings.format === 'webm') {
+    const { encodeWebm } = await import('./webm');
+    return encodeWebm({ canvas, draw, frameCount, animatedFrames, settings, report });
+  }
+  await loadEngine();
   const frames = [];
-  let inputWritten = false;
-  const progress = ({ time }) => report(53 + Math.min(0.98, Math.max(0, time / (settings.duration * 1e6))) * 44, 'MP4 kódolása');
+  const encoding = `${container} kódolása`;
+  let inputMount;
+  let mounted = false;
+  const progress = ({ time }) => report(53 + Math.min(0.98, Math.max(0, time / (settings.duration * 1e6))) * 44, encoding);
 
   try {
     for (let index = 0; index < animatedFrames; index += 1) {
@@ -46,24 +54,33 @@ export async function renderVideo(text, settings, report) {
       frames.push(await capture(canvas));
       if (index % 4 === 0) report(7 + 44 * (index + 1) / animatedFrames, 'Képkockák előállítása');
     }
-    await ffmpeg.writeFile('frames.mjpg', new Uint8Array(await new Blob(frames).arrayBuffer()));
+    // WORKERFS reads the JPEG stream from a Blob without copying all frames into the FFmpeg heap.
+    inputMount = `/frames-${crypto.randomUUID()}`;
+    await ffmpeg.createDir(inputMount);
+    mounted = await ffmpeg.mount('WORKERFS', { blobs: [{ name: 'frames.mjpg', data: new Blob(frames) }] }, inputMount);
+    if (!mounted) throw new Error('Az FFmpeg nem tudta megnyitni a képkockákat.');
     frames.length = 0;
-    inputWritten = true;
-    report(53, 'MP4 kódolása');
+    report(53, encoding);
     ffmpeg.on('progress', progress);
     const result = await ffmpeg.exec([
-      '-f', 'image2pipe', '-framerate', String(settings.fps), '-vcodec', 'mjpeg', '-i', 'frames.mjpg',
+      '-f', 'image2pipe', '-framerate', String(settings.fps), '-vcodec', 'mjpeg', '-i', `${inputMount}/frames.mjpg`,
       '-vf', `tpad=stop_mode=clone:stop=${frameCount - animatedFrames}`, '-frames:v', String(frameCount),
-      '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p',
-      '-threads', '1', '-movflags', '+faststart', 'present-fflow.mp4',
-    ]);
-    if (result !== 0) throw new Error('Az FFmpeg nem tudta elkészíteni az MP4 fájlt.');
-    return new Blob([await ffmpeg.readFile('present-fflow.mp4')], { type: 'video/mp4' });
+      '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', String(settings.crf),
+      '-pix_fmt', 'yuv420p', '-threads', '1', '-movflags', '+faststart', outputFile,
+    ]).catch((error) => {
+      ffmpeg.terminate();
+      throw error;
+    });
+    if (result !== 0) throw new Error(`Az FFmpeg nem tudta elkészíteni a(z) ${container} fájlt.`);
+    return new Blob([await ffmpeg.readFile(outputFile)], { type: mime });
   } finally {
     ffmpeg.off('progress', progress);
-    await Promise.allSettled([
-      inputWritten && ffmpeg.deleteFile('frames.mjpg'),
-      ffmpeg.deleteFile('present-fflow.mp4'),
+    if (ffmpeg.loaded) await Promise.allSettled([
+      inputMount && (async () => {
+        if (mounted) await ffmpeg.unmount(inputMount);
+        await ffmpeg.deleteDir(inputMount);
+      })(),
+      ffmpeg.deleteFile(outputFile),
     ]);
   }
 }

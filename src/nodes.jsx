@@ -1,16 +1,20 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { BaseEdge, getBezierPath, Handle, Position } from '@xyflow/react';
-import { Blend, ChevronDown, Clapperboard, Cog, Download, FastForward, Maximize, Pause, Play, Type, X } from 'lucide-react';
-import { defaults, effects, fonts, label, resolutions, upstream } from './project';
+import { BaseEdge, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
+import { Blend, ChevronDown, Clapperboard, Cog, Download, FastForward, Maximize, Pause, Play, Repeat2, Type, X } from 'lucide-react';
+import { defaults, effects, fonts, formats, label, qualities, resolutions, upstream, videoSize } from './project';
 import { makeScene } from './scene';
 
 export const GraphContext = createContext(null);
 export const typeIcons = { text: Type, render: Cog, video: Clapperboard };
-export const descriptions = { text: 'Címek és animációk', render: 'MP4 videó készítése', video: 'Előnézet és lejátszás' };
+export const descriptions = { text: 'Címek és animációk', render: 'MP4 és WebM videó', video: 'Előnézet és lejátszás' };
 
 export function NodeIcon({ type }) {
   const Icon = typeIcons[type];
   return <span className={`node-icon ${type}`}><Icon size={16} strokeWidth={2} /></span>;
+}
+
+function ChromeIcon({ type }) {
+  return <span className={`chrome-icon chrome-${type}`} aria-hidden="true"><span /><span /><span /></span>;
 }
 
 export function Select({ children, ...props }) {
@@ -40,7 +44,7 @@ function Card({ id, type, selected, children, input, output }) {
   const source = edges.find((edge) => edge.source === id);
   const inputType = nodes.find((node) => node.id === target?.source)?.type;
   return <article className={`node-card node-${type}${selected ? ' is-selected' : ''}`} aria-label={label[type]}>
-    <header className="node-header"><NodeIcon type={type} /><strong>{label[type]}</strong>
+    <header className="node-header"><ChromeIcon type={type} /><strong>{label[type]}</strong>
       <button type="button" className="icon-button node-close nodrag" title={`${label[type]} törlése`} aria-label={`${label[type]} törlése`} onClick={() => deleteNode(id)}><X size={15} /></button>
     </header>
     <div className="port-row">
@@ -70,7 +74,7 @@ function RenderNode({ id, data, selected }) {
   const { updateNode, runRender, rendering } = useContext(GraphContext);
   const set = (key, value) => updateNode(id, key, value);
   const active = rendering?.id === id;
-  return <Card id={id} type="render" selected={selected} input="Jelenet" output="MP4">
+  return <Card id={id} type="render" selected={selected} input="Jelenet" output={formats[data.format].container}>
     <label className="field">Felbontás<Select value={data.resolution} onChange={(event) => set('resolution', event.target.value)}>
       {Object.entries(resolutions).map(([key, { label: name, width, height }]) => <option value={key} key={key}>{width} × {height} · {name}</option>)}
     </Select></label>
@@ -82,7 +86,12 @@ function RenderNode({ id, data, selected }) {
       <label className="field">Háttér<Select value={data.style} onChange={(event) => set('style', event.target.value)}><option value="ribbons">Fényívek</option><option value="solid">Egyszínű</option></Select></label>
       <label className="field">Szín<Color value={data.background} onChange={(value) => set('background', value)} /></label>
     </div>
-    <div className="format-row"><span>Kimenet</span><span>H.264 <span className="format-dot">·</span> MP4</span></div>
+    <label className="field">Kimeneti formátum<Select aria-label="Kimeneti formátum" value={data.format} onChange={(event) => set('format', event.target.value)}>
+      {Object.entries(formats).map(([key, { container, codec }]) => <option key={key} value={key}>{container} ({codec})</option>)}
+    </Select></label>
+    <label className="field">Renderelési minőség<Select aria-label="Renderelési minőség" value={data.crf} onChange={(event) => set('crf', Number(event.target.value))}>
+      {qualities.map(({ crf, label: name }) => <option key={crf} value={crf}>{name} (CRF {crf})</option>)}
+    </Select></label>
     <button type="button" className="render-button" disabled={Boolean(rendering)} onClick={() => runRender(id)}>
       <Play size={13} fill="currentColor" /> {active ? `${Math.round(rendering.progress)}% · Renderelés` : 'Renderelés indítása'}
     </button>
@@ -91,12 +100,12 @@ function RenderNode({ id, data, selected }) {
 
 const stamp = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
-function Preview({ text, settings, time }) {
+function Preview({ text, settings, time, size }) {
   const canvas = useRef(null);
   const draw = useRef(null);
   const latestTime = useRef(time);
   const resolution = resolutions[settings.resolution];
-  const width = Math.round(480 * Math.min(1, resolution.width / resolution.height));
+  const width = Math.round(size * Math.min(1, resolution.width / resolution.height));
   const height = Math.round(width * resolution.height / resolution.width);
   useEffect(() => {
     const update = () => {
@@ -107,18 +116,19 @@ function Preview({ text, settings, time }) {
     let alive = true;
     document.fonts.ready.then(() => { if (alive) update(); });
     return () => { alive = false; };
-  }, [text, settings]);
+  }, [text, settings, width, height]);
   useEffect(() => { latestTime.current = time; draw.current?.(time); }, [time]);
   return <canvas ref={canvas} width={width} height={height} aria-label="Animáció előnézete" />;
 }
 
-function VideoNode({ id, selected }) {
-  const { nodes, edges, outputs, download } = useContext(GraphContext);
+function VideoNode({ id, data, selected, width }) {
+  const { nodes, edges, outputs, download, updateNode, resizeVideo } = useContext(GraphContext);
   const render = upstream(id, nodes, edges);
   const text = render && upstream(render.id, nodes, edges);
   const output = render && outputs[render.id];
   const settings = render?.data ?? defaults.render;
   const duration = output?.duration ?? settings.duration;
+  const previewSize = Math.max(480, Math.ceil((width ?? videoSize.min) / 128) * 128);
   const video = useRef(null);
   const screen = useRef(null);
   const [playing, setPlaying] = useState(false);
@@ -138,7 +148,8 @@ function VideoNode({ id, selected }) {
     let frame;
     let previous = performance.now();
     const tick = (now) => {
-      const next = Math.min(duration, position.current + (now - previous) / 1000);
+      const elapsed = position.current + (now - previous) / 1000;
+      const next = data.loop ? elapsed % duration : Math.min(duration, elapsed);
       previous = now;
       setPosition(next);
       if (next < duration) frame = requestAnimationFrame(tick);
@@ -146,7 +157,7 @@ function VideoNode({ id, selected }) {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [duration, output, playing]);
+  }, [data.loop, duration, output, playing]);
 
   function toggle() {
     if (output) {
@@ -168,9 +179,9 @@ function VideoNode({ id, selected }) {
   const playable = Boolean(output || text);
   return <Card id={id} type="video" selected={selected} input="Videó">
     <div className="video-screen" ref={screen}>
-      {output ? <video key={output.url} ref={video} src={output.url} playsInline onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+      {output ? <video key={output.url} ref={video} src={output.url} playsInline loop={data.loop} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)} onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)} />
-        : text ? <Preview text={text.data} settings={settings} time={showPoster ? text.data.seconds : time} /> : <div className="empty-screen"><Clapperboard size={23} /><span>Köss be egy renderkártyát</span></div>}
+        : text ? <Preview text={text.data} settings={settings} time={showPoster ? text.data.seconds : time} size={previewSize} /> : <div className="empty-screen"><Clapperboard size={23} /><span>Köss be egy renderkártyát</span></div>}
       <span className="screen-label"><span />{output ? 'RENDERELT VIDEÓ' : 'ELŐNÉZET'}</span>
     </div>
     <input className="scrubber" type="range" min={0} max={duration} step={0.01} value={Math.min(time, duration)} disabled={!playable}
@@ -179,9 +190,19 @@ function VideoNode({ id, selected }) {
       <button className="icon-button player-play" type="button" title={playing ? 'Szünet' : 'Lejátszás'} aria-label={playing ? 'Szünet' : 'Lejátszás'} disabled={!playable} onClick={toggle}>{playing ? <Pause size={13} fill="currentColor" /> : <Play size={13} fill="currentColor" />}</button>
       <button className="icon-button" type="button" title="Ugrás a végére" aria-label="Ugrás a végére" disabled={!playable} onClick={() => seek(duration)}><FastForward size={13} /></button>
       <span className="timecode">{stamp(time)} <span>/</span> {stamp(playable ? duration : 0)}</span>
+      <button className="icon-button loop-button" type="button" title={data.loop ? 'Ismétlés kikapcsolása' : 'Ismétlés bekapcsolása'} aria-label="Ismétlés" aria-pressed={data.loop} onClick={() => updateNode(id, 'loop', !data.loop)}><Repeat2 size={15} /></button>
       <button className="icon-button" type="button" title="Teljes képernyő" aria-label="Teljes képernyő" disabled={!playable} onClick={() => screen.current.requestFullscreen?.().catch(() => {})}><Maximize size={13} /></button>
       {output && <button className="icon-button" type="button" title="Videó letöltése" aria-label="Videó letöltése" onClick={() => download(output)}><Download size={14} /></button>}
     </div>
+    <NodeResizeControl className="video-resize nodrag" position="bottom-right" resizeDirection="horizontal" minWidth={videoSize.min} maxWidth={videoSize.max} autoScale={false}>
+      <button type="button" className="resize-grip" aria-label="Videókártya méretezése" title="Húzd a kártya méretezéséhez, vagy használd a nyílbillentyűket" onKeyDown={(event) => {
+        const step = { ArrowLeft: -24, ArrowDown: -24, ArrowRight: 24, ArrowUp: 24 }[event.key];
+        if (!step && event.key !== 'Home' && event.key !== 'End') return;
+        event.preventDefault();
+        event.stopPropagation();
+        resizeVideo(id, step ? (width ?? videoSize.min) + step : event.key === 'Home' ? videoSize.min : videoSize.max);
+      }} />
+    </NodeResizeControl>
   </Card>;
 }
 

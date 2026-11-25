@@ -6,7 +6,7 @@ import '@fontsource-variable/inter';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
 import { descriptions, edgeTypes, GraphContext, NodeIcon, nodeTypes } from './nodes';
-import { canConnect, edgeType, effects, getInitialProject, label, makeNode, readProject, resolutions, serialize, storageKey, upstream } from './project';
+import { canConnect, defaults, edgeType, effects, formats, getInitialProject, label, makeNode, readProject, resolutions, serialize, storageKey, upstream, videoSize } from './project';
 
 const time = () => new Intl.DateTimeFormat('hu', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Budapest' }).format(new Date());
 const fileStem = (title) => title.trim().replace(/[^\p{L}\p{N} _-]+/gu, '-').replace(/\s+/g, '-') || 'present-fflow';
@@ -59,6 +59,7 @@ function App() {
   const selectedEdge = edges.find((edge) => edge.selected);
   const result = Object.values(outputs).at(-1);
   const availableRenderer = nodes.find((node) => node.type === 'render' && upstream(node.id, nodes, edges));
+  const renderFormat = formats[(selected?.type === 'render' ? selected.data.format : result?.format ?? availableRenderer?.data.format) ?? defaults.render.format];
   const searchResults = nodes.filter((node) => `${label[node.type]} ${node.data.text ?? ''}`.toLocaleLowerCase('hu').includes(query.toLocaleLowerCase('hu').trim()));
   const shownLogs = consoleTab === 'Renderelés' ? logs.filter((entry) => entry.area === 'FFmpeg') : logs;
   const announce = useCallback((message, kind, area) => setLogs((old) => [...old, log(message, kind, area)].slice(-100)), []);
@@ -102,6 +103,13 @@ function App() {
   function updateNode(id, key, value) {
     if (current.current.nodes.find((node) => node.id === id)?.data[key] === value) return;
     setNodes((old) => old.map((node) => node.id === id ? { ...node, data: { ...node.data, [key]: value } } : node));
+    setDirty(true);
+  }
+
+  function resizeVideo(id, width) {
+    const nextWidth = Math.min(videoSize.max, Math.max(videoSize.min, width));
+    if (current.current.nodes.find((node) => node.id === id)?.width === nextWidth) return;
+    setNodes((old) => old.map((node) => node.id === id ? { ...node, width: nextWidth } : node));
     setDirty(true);
   }
 
@@ -186,8 +194,9 @@ function App() {
     busy.current = true;
     const signature = graphProgress(id, state.nodes, state.edges);
     const settings = renderer.data;
+    const { container, codec } = formats[settings.format];
     setRendering({ id, progress: 2, phase: 'FFmpeg betöltése' });
-    announce(`Renderelés elindult · ${settings.resolution.replace('x', ' × ')} · ${settings.fps} fps`, 'info', 'FFmpeg');
+    announce(`Renderelés elindult · ${container} / ${codec} · ${settings.resolution.replace('x', ' × ')} · ${settings.fps} fps · CRF ${settings.crf}`, 'info', 'FFmpeg');
     try {
       const { renderVideo } = await import('./render');
       const blob = await renderVideo(text.data, settings, (progress, phase) => setRendering({ id, progress, phase }));
@@ -197,11 +206,11 @@ function App() {
         return;
       }
       const url = URL.createObjectURL(blob);
-      const output = { url, signature, name: `${fileStem(state.name)}.mp4`, duration: Math.ceil(settings.duration * settings.fps) / settings.fps };
+      const output = { url, signature, format: settings.format, name: `${fileStem(state.name)}.${settings.format}`, duration: Math.ceil(settings.duration * settings.fps) / settings.fps };
       const previous = outputs[id];
       setOutputs((old) => ({ ...old, [id]: output }));
       if (previous) URL.revokeObjectURL(previous.url);
-      announce(`Az MP4 elkészült · ${(blob.size / 1024 / 1024).toFixed(2).replace('.', ',')} MB`, 'success', 'FFmpeg');
+      announce(`A videó elkészült · ${container} · ${(blob.size / 1024 / 1024).toFixed(2).replace('.', ',')} MB`, 'success', 'FFmpeg');
       setToast('A videó elkészült.');
     } catch (error) {
       announce(`Renderelési hiba · ${error?.message ?? String(error)}`, 'error', 'FFmpeg');
@@ -254,17 +263,17 @@ function App() {
 
         <div className="flow-canvas" ref={canvas} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/present-fflow')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }}
           onDrop={(event) => { event.preventDefault(); addNode(event.dataTransfer.getData('application/present-fflow'), flow.screenToFlowPosition({ x: event.clientX, y: event.clientY })); }}>
-          <GraphContext.Provider value={{ nodes, edges, updateNode, deleteNode, runRender, rendering, outputs, download }}>
+          <GraphContext.Provider value={{ nodes, edges, updateNode, resizeVideo, deleteNode, runRender, rendering, outputs, download }}>
             <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} colorMode="dark"
               fitView={!project.viewport} fitViewOptions={{ padding: 0.12, maxZoom: 1 }} defaultViewport={project.viewport}
               minZoom={0.22} maxZoom={2} nodesDraggable edgesReconnectable={false} deleteKeyCode={['Backspace', 'Delete']}
               zoomOnDoubleClick={false} onMove={(_, viewport) => setZoom(viewport.zoom)} onInit={(instance) => setZoom(instance.getZoom())}
-              onNodesChange={(changes) => { if (changes.some(({ type, dragging }) => type === 'remove' || (type === 'position' && dragging === false))) setDirty(true); changeNodes(changes); }}
+              onNodesChange={(changes) => { if (changes.some(({ type, dragging, resizing }) => type === 'remove' || (type === 'position' && dragging === false) || (type === 'dimensions' && resizing === false))) setDirty(true); changeNodes(changes); }}
               onEdgesChange={(changes) => { if (changes.some(({ type }) => type === 'remove')) setDirty(true); changeEdges(changes); }}
               isValidConnection={(connection) => canConnect(connection, nodes, edges)}
               onConnect={(connection) => { setEdges((old) => canConnect(connection, nodes, old) ? addEdge({ ...connection, type: edgeType }, old) : old); setDirty(true); announce('Kapcsolat létrehozva.'); }}
               ariaLabelConfig={{ 'node.a11yDescription.default': 'Enter a kártya kijelöléséhez. Delete a törléséhez.', 'edge.a11yDescription.default': 'Enter a kapcsolat kijelöléséhez. Delete a törléséhez.' }}>
-              <Background gap={22} size={1.05} color="#909ba879" />
+              <Background gap={22} size={1.6} color="#f0f2f9b3" />
               {nodes.length > 0 && <MiniMap position="bottom-right" ariaLabel="Vászon térképe" nodeColor={(node) => node.type === 'video' ? '#829cc2' : '#929aa4'} nodeBorderRadius={6} maskColor="rgba(18,20,23,.53)" pannable zoomable />}
             </ReactFlow>
           </GraphContext.Provider>
@@ -310,9 +319,9 @@ function App() {
         </div></details>
         <details open><summary><FileVideo size={15} /> Renderelés <ChevronDown size={14} /></summary><div className="detail-body">
           <div className="detail-row"><span>Motor</span><span>FFmpeg</span></div>
-          <div className="detail-row"><span>Kimenet</span><span>MP4 · H.264</span></div>
+          <div className="detail-row"><span>Kimenet</span><span>{renderFormat.container} · {renderFormat.codec}</span></div>
           <div className="detail-row"><span>Állapot</span><span>{rendering?.phase ?? (result ? 'Elkészült' : 'Készen áll')}</span></div>
-          {result && <button className="detail-delete" type="button" onClick={() => download(result)}><ArrowDownToLine size={14} /> MP4 letöltése</button>}
+          {result && <button className="detail-delete" type="button" onClick={() => download(result)}><ArrowDownToLine size={14} /> {formats[result.format].container} letöltése</button>}
         </div></details>
         <div className="inspector-bottom"><button type="button" onClick={() => help.current.showModal()}><Command size={14} /> Billentyűparancsok</button></div>
       </aside>}
@@ -322,7 +331,7 @@ function App() {
     <input hidden ref={importInput} type="file" accept=".json,application/json" onChange={importProject} />
     <dialog ref={help} className="help-dialog"><header><h2>A munkatér használata</h2><IconButton icon={X} title="Súgó bezárása" onClick={() => help.current.close()} /></header>
       <p>Adj kártyákat a vászonhoz, majd húzd a kimeneti csatlakozót a következő kártya bemenetére. A kártya fejlécével mozgathatod.</p>
-      <p>A videóhoz a jelenet útvonala Szöveg → FFmpeg render → Videólejátszó. A render gomb elkészíti az MP4-fájlt.</p>
+      <p>A videóhoz a jelenet útvonala Szöveg → FFmpeg render → Videólejátszó. Válassz MP4- vagy WebM-kimenetet, majd indítsd a renderelést. A lejátszó jobb alsó sarkát húzva átméretezheted a kártyát.</p>
       <dl><dt>Projekt mentése</dt><dd><kbd>Ctrl</kbd> + <kbd>S</kbd></dd><dt>Keresés</dt><dd><kbd>Ctrl</kbd> + <kbd>K</kbd></dd><dt>Kijelölés törlése</dt><dd><kbd>Delete</kbd></dd><dt>Nagyítás</dt><dd>Egérgörgő</dd></dl>
     </dialog>
   </div>;

@@ -7,13 +7,25 @@ export const fonts = ['Inter', 'Arial', 'Georgia', 'Verdana', 'Courier New', 'Tr
 export const resolutions = {
   '1280x720': { label: 'HD', width: 1280, height: 720 },
   '1920x1080': { label: 'Full HD', width: 1920, height: 1080 },
+  '3840x2160': { label: '4K UHD', width: 3840, height: 2160 },
   '1080x1920': { label: 'Álló', width: 1080, height: 1920 },
   '1080x1080': { label: 'Négyzetes', width: 1080, height: 1080 },
 };
+export const formats = {
+  mp4: { container: 'MP4', codec: 'H.264', mime: 'video/mp4' },
+  webm: { container: 'WebM', codec: 'VP9', mime: 'video/webm' },
+};
+export const qualities = [
+  { crf: 26, label: 'Gyors előnézet' },
+  { crf: 20, label: 'Kiegyensúlyozott' },
+  { crf: 15, label: 'Stúdió minőség' },
+];
+export const videoSize = { min: 264, max: 920 };
+
 export const defaults = {
   text: { text: 'A történet\nitt kezdődik.', font: 'Inter', color: '#f2f3fa', effect: 'slide', seconds: 1.2 },
-  render: { resolution: '1920x1080', fps: 30, duration: 4, background: '#111520', style: 'ribbons' },
-  video: {},
+  render: { resolution: '1920x1080', fps: 30, duration: 4, background: '#111520', style: 'ribbons', format: 'mp4', crf: 20 },
+  video: { loop: false },
 };
 
 export const label = { text: 'Szöveg', render: 'FFmpeg render', video: 'Videólejátszó' };
@@ -22,6 +34,7 @@ export const storageKey = 'present-fflow-v1';
 
 export const makeNode = (type, position, id = crypto.randomUUID()) => ({
   id, type, position, data: { ...defaults[type] }, dragHandle: '.node-header',
+  ...(type === 'video' && { width: videoSize.min }),
 });
 
 export const example = {
@@ -43,7 +56,9 @@ export function canConnect({ source, target }, nodes, edges) {
 export const upstream = (target, nodes, edges) => nodes.find((node) => node.id === edges.find((edge) => edge.target === target)?.source);
 
 export function serialize(name, nodes, edges, viewport) {
-  return { version: 1, name, viewport, nodes: nodes.map(({ id, type, position, data }) => ({ id, type, position, data })),
+  return { version: 1, name, viewport, nodes: nodes.map(({ id, type, position, data, width }) => ({
+    id, type, position, data, ...(type === 'video' && { width }),
+  })),
     edges: edges.map(({ id, source, target }) => ({ id, source, target })) };
 }
 
@@ -78,7 +93,13 @@ export function readProject(value) {
       duration: clamp(data.duration, 0.1, 20, defaults.render.duration),
       background: color(data.background, defaults.render.background),
       style: data.style === 'solid' ? 'solid' : defaults.render.style,
+      format: Object.hasOwn(formats, data.format) ? data.format : defaults.render.format,
+      crf: qualities.some(({ crf }) => crf === data.crf) ? data.crf : defaults.render.crf,
     });
+    if (item.type === 'video') {
+      node.width = clamp(item.width, videoSize.min, videoSize.max, videoSize.min);
+      node.data.loop = data.loop === true;
+    }
     return node;
   });
   const edges = [];
