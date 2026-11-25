@@ -359,6 +359,20 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
 .help-dialog p { color: #cbd2df; line-height: 1.6; font-size: 14px; }
 .help-dialog dl { border-top: 1px solid var(--line); padding-top: 12px; display: grid; grid-template-columns: 1fr auto; gap: 10px; font-size: 13px; align-items: center; }
 .help-dialog dd { margin: 0; text-align: right; }
+.text-preview-button { min-height: 33px; color: #dce4f1; border-color: #ffffff27; }
+.text-preview-dialog { width: min(780px, calc(100% - 28px)); max-height: calc(100dvh - 28px); padding: 0; color: var(--text); border: 1px solid #818996; border-radius: 12px; background: #24272e; box-shadow: 0 18px 76px #000a; }
+.text-preview-dialog::backdrop { background: #090b13c7; }
+.text-preview-dialog header, .text-preview-dialog footer { display: flex; align-items: center; gap: 10px; padding: 12px 15px; background: url('/grain.png'), linear-gradient(#31343b, #25282f); }
+.text-preview-dialog header { border-bottom: 1px solid #ffffff23; }
+.text-preview-dialog h2 { flex: 1; margin: 0; font-size: 16px; font-weight: 630; }
+.text-preview-stage { display: grid; place-items: center; background: #12151d; }
+.text-preview-stage canvas { display: block; width: 100%; height: auto; max-height: min(60dvh, 480px); object-fit: contain; }
+.text-preview-progress { display: block; width: 100%; height: 3px; border: 0; appearance: none; background: #373d49; color: #a9c5ec; }
+.text-preview-progress::-webkit-progress-bar { background: #373d49; }
+.text-preview-progress::-webkit-progress-value { background: #a9c5ec; }
+.text-preview-progress::-moz-progress-bar { background: #a9c5ec; }
+.text-preview-dialog footer { justify-content: space-between; }
+.text-preview-dialog footer > span { color: var(--secondary); font-size: 13px; }
 
 @media (min-width: 1600px) {
   #root { padding: 22px; }

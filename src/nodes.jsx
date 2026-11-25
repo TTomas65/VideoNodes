@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { BaseEdge, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
-import { Blend, ChevronDown, Clapperboard, Cog, Download, FastForward, Maximize, Pause, Play, Repeat2, Type, X } from 'lucide-react';
+import { Blend, ChevronDown, Clapperboard, Cog, Download, Eye, FastForward, Maximize, Pause, Play, Repeat2, RotateCcw, Type, X } from 'lucide-react';
 import { defaults, effects, fonts, formats, label, qualities, resolutions, upstream, videoSize } from './project';
 import { makeScene } from './scene';
 
@@ -56,8 +57,10 @@ function Card({ id, type, selected, children, input, output }) {
 }
 
 function TextNode({ id, data, selected }) {
-  const { updateNode } = useContext(GraphContext);
+  const { updateNode, nodes, edges } = useContext(GraphContext);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const set = (key, value) => updateNode(id, key, value);
+  const linkedRender = previewOpen && nodes.find((node) => node.id === edges.find((edge) => edge.source === id)?.target);
   return <Card id={id} type="text" selected={selected} output="Szöveg">
     <label className="field">Tartalom<textarea rows={2} maxLength={360} value={data.text} placeholder="Írd be a szöveget…" onChange={(event) => set('text', event.target.value)} /></label>
     <div className="fields-two text-style-fields">
@@ -67,6 +70,10 @@ function TextNode({ id, data, selected }) {
     <div className="field-divider" />
     <label className="field"><span className="field-with-icon"><Blend size={13} /> Animáció</span><Select aria-label="Animáció" value={data.effect} onChange={(event) => set('effect', event.target.value)}>{Object.entries(effects).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</Select></label>
     <label className="field field-inline">Animáció ideje<Seconds value={data.seconds} max={10} onChange={(value) => set('seconds', value)} /></label>
+    <button type="button" className="button text-preview-button" aria-haspopup="dialog" disabled={!data.text.trim()} onClick={() => setPreviewOpen(true)}>
+      <Eye size={15} /> Előnézet
+    </button>
+    {previewOpen && <TextPreviewDialog text={data} settings={linkedRender?.data ?? defaults.render} onClose={() => setPreviewOpen(false)} />}
   </Card>;
 }
 
@@ -119,6 +126,44 @@ function Preview({ text, settings, time, size }) {
   }, [text, settings, width, height]);
   useEffect(() => { latestTime.current = time; draw.current?.(time); }, [time]);
   return <canvas ref={canvas} width={width} height={height} aria-label="Animáció előnézete" />;
+}
+
+function TextPreviewDialog({ text, settings, onClose }) {
+  const dialog = useRef(null);
+  const title = useId();
+  const [time, setTime] = useState(0);
+  const [replay, setReplay] = useState(0);
+
+  useEffect(() => {
+    dialog.current.showModal();
+  }, []);
+
+  useEffect(() => {
+    let frame;
+    let start;
+    const tick = (now) => {
+      start ??= now;
+      const elapsed = Math.min(text.seconds, (now - start) / 1000);
+      setTime(elapsed);
+      if (elapsed < text.seconds) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [replay, text.seconds]);
+
+  return createPortal(<dialog ref={dialog} className="text-preview-dialog" aria-labelledby={title} onClose={onClose} onKeyDown={(event) => event.stopPropagation()}>
+    <header>
+      <Eye size={17} />
+      <h2 id={title}>Szöveg előnézete</h2>
+      <button type="button" className="icon-button" aria-label="Előnézet bezárása" onClick={() => dialog.current.close()}><X size={17} /></button>
+    </header>
+    <div className="text-preview-stage"><Preview text={text} settings={settings} time={time} size={960} /></div>
+    <progress className="text-preview-progress" aria-label="Animáció előrehaladása" max={text.seconds} value={time} />
+    <footer>
+      <span>{effects[text.effect]} · {text.seconds.toLocaleString('hu-HU')} mp</span>
+      <button type="button" className="button" onClick={() => { setTime(0); setReplay((value) => value + 1); }}><RotateCcw size={14} /> Újrajátszás</button>
+    </footer>
+  </dialog>, document.body);
 }
 
 function VideoNode({ id, data, selected, width }) {
