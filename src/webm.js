@@ -1,6 +1,6 @@
 import { formats } from './project';
 
-export async function encodeWebm({ canvas, draw, frameCount, animatedFrames, settings, report }) {
+export async function encodeWebm({ canvas, draw, frameCount, needsFrame, settings, report }) {
   const base = new URL(`${import.meta.env.BASE_URL}ffmpeg/vp9/`, document.baseURI);
   const { default: LibAV } = await import(/* @vite-ignore */ new URL('index.mjs', base).href);
   // The libvpx build in ffmpeg.wasm fails on inter frames. Use LibAV.js's newer FFmpeg build for VP9.
@@ -27,7 +27,7 @@ export async function encodeWebm({ canvas, draw, frameCount, animatedFrames, set
 
     let sceneFrame;
     for (let index = 0; index < frameCount; index += 1) {
-      if (index < animatedFrames) {
+      if (needsFrame(index)) {
         if (sceneFrame) await engine.av_frame_free_js(sceneFrame);
         draw(index / fps);
         const { data } = context.getImageData(0, 0, width, height);
@@ -45,7 +45,9 @@ export async function encodeWebm({ canvas, draw, frameCount, animatedFrames, set
       const packets = await engine.ff_encode_multi(encoder, frame, packet, [encodingFrame], index === frameCount - 1);
       for (const encoded of packets) encoded.duration ||= 1;
       await engine.ff_write_multi(muxer, packet, packets);
-      if (index % 3 === 0) report(7 + ((index + 1) / frameCount) * 90, 'WebM kódolása');
+      if (index % 3 === 0 || index === frameCount - 1) {
+        report({ progress: 7 + ((index + 1) / frameCount) * 90, phase: 'WebM kódolása', prepared: index + 1, encoded: index + 1 });
+      }
     }
 
     if (await engine.av_write_trailer(muxer) < 0) throw new Error('A WebM lezárása sikertelen.');

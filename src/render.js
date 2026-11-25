@@ -38,25 +38,37 @@ export async function renderVideo(timeline, settings, report, background) {
   const outputFile = `present-fflow.${settings.format}`;
   const canvas = document.createElement('canvas');
   Object.assign(canvas, { width, height });
-  const draw = makeTimelineScene(canvas, timeline, settings, background, image);
+  const draw = makeTimelineScene(canvas, timeline, background, image);
   const { frameCount } = timeline;
-  const animatedFrames = movingBackground(background) ? frameCount : Math.max(1, timeline.contentFrames);
+  const moving = movingBackground(background);
+  const needsFrame = (index) => moving || timeline.scenes.some(({ start, end, animationEnd }) => start <= index && index < Math.min(end, animationEnd));
   if (settings.format === 'webm') {
     const { encodeWebm } = await import('./webm');
-    return encodeWebm({ canvas, draw, frameCount, animatedFrames, settings, report });
+    return encodeWebm({ canvas, draw, frameCount, needsFrame, settings, report });
   }
   await loadEngine();
+  const last = timeline.scenes.at(-1);
+  const captureFrames = moving ? frameCount : Math.min(last.end, last.animationEnd);
   const frames = [];
   const encoding = `${container} kódolása`;
   let inputMount;
   let mounted = false;
-  const progress = ({ time }) => report(53 + Math.min(0.98, Math.max(0, time / (timeline.duration * 1e6))) * 44, encoding);
+  let encoded = 0;
+  const progress = ({ time }) => {
+    if (!Number.isFinite(time)) return;
+    encoded = Math.max(encoded, Math.min(frameCount, Math.floor(time * timeline.fps / 1e6 + 1e-4)));
+    report({ progress: 53 + (encoded / frameCount) * 44, phase: encoding, prepared: frameCount, encoded });
+  };
 
   try {
-    for (let index = 0; index < animatedFrames; index += 1) {
-      draw(index / settings.fps);
-      frames.push(await capture(canvas));
-      if (index % 4 === 0) report(7 + 44 * (index + 1) / animatedFrames, 'Képkockák előállítása');
+    let lastFrame;
+    for (let index = 0; index < captureFrames; index += 1) {
+      if (needsFrame(index)) {
+        draw(index / settings.fps);
+        lastFrame = await capture(canvas);
+      }
+      frames.push(lastFrame);
+      if (index % 4 === 0) report({ progress: 7 + 44 * (index + 1) / captureFrames, phase: 'Képkockák előállítása', prepared: index + 1 });
     }
     // WORKERFS reads the JPEG stream from a Blob without copying all frames into the FFmpeg heap.
     inputMount = `/frames-${crypto.randomUUID()}`;
@@ -64,11 +76,11 @@ export async function renderVideo(timeline, settings, report, background) {
     mounted = await ffmpeg.mount('WORKERFS', { blobs: [{ name: 'frames.mjpg', data: new Blob(frames) }] }, inputMount);
     if (!mounted) throw new Error('Az FFmpeg nem tudta megnyitni a képkockákat.');
     frames.length = 0;
-    report(53, encoding);
+    report({ progress: 53, phase: encoding, prepared: frameCount });
     ffmpeg.on('progress', progress);
     const result = await ffmpeg.exec([
-      '-f', 'image2pipe', '-framerate', String(settings.fps), '-vcodec', 'mjpeg', '-i', `${inputMount}/frames.mjpg`,
-      '-vf', `tpad=stop_mode=clone:stop=${frameCount - animatedFrames}`, '-frames:v', String(frameCount),
+      '-stats_period', '0.15', '-f', 'image2pipe', '-framerate', String(settings.fps), '-vcodec', 'mjpeg', '-i', `${inputMount}/frames.mjpg`,
+      '-vf', `tpad=stop_mode=clone:stop=${frameCount - captureFrames}`, '-frames:v', String(frameCount),
       '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', String(settings.crf),
       '-pix_fmt', 'yuv420p', '-threads', '1', '-movflags', '+faststart', outputFile,
     ]).catch((error) => {

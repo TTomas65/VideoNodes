@@ -233,9 +233,16 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
 .node-icon.video { background: linear-gradient(135deg, #ecf2fc, #a0b1cc 52%, #8296b6 76%, #b9c8de); }
 .node-close { color: #e0e4ebad; width: 23px; height: 23px; }
 .port-row { height: 33px; display: flex; justify-content: space-between; align-items: center; padding: 0; background: #14161c35; border-bottom: 1px solid var(--line); }
-.scene-port { height: 22px; }
-.scene-port:nth-child(2) { height: 30px; }
+.scene-port { position: relative; height: 31px; padding-right: 9px; }
 .scene-port .port-in { font-variant-numeric: tabular-nums; }
+.scene-timing { display: flex; align-items: center; gap: 6px; }
+.scene-timing .unit-field { width: 77px; min-height: 23px; padding: 0 5px 0 0; font-size: 11px; }
+.scene-timing .unit-field input { flex: 1; width: 100%; min-width: 0; border: 0; border-radius: 3px; padding: 3px 2px 3px 5px; color: #edf2fb; background: transparent; font-size: 11px; font-variant-numeric: tabular-nums; }
+.scene-timing .unit-field input::placeholder { color: #aeb8c7; opacity: 1; }
+.scene-percent { width: 31px; color: #a5e3ff; font: 10px ui-monospace, Consolas, monospace; text-align: right; }
+.scene-progress-track { position: absolute; left: 13px; right: 10px; bottom: 0; height: 2px; border-radius: 3px; background: #324858; pointer-events: none; }
+.scene-progress-track.inactive { background: #303943; }
+.scene-progress-track > span { display: block; height: 100%; border-radius: 3px; background: #62d1ff; box-shadow: 0 0 6px #55cfff99; transition: width 140ms linear; }
 .port { display: inline-flex; align-items: center; position: relative; height: 100%; color: #c6cbd4; font-size: 12px; }
 .port-in { padding-left: 13px; }
 .port-out { padding-right: 13px; }
@@ -329,6 +336,7 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
 .console-bar > button.active::after { content: ''; position: absolute; bottom: 0; left: 8px; right: 8px; height: 2px; background: #a7b8d7; }
 .log-count { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 4px; background: #ffffff12; color: #bac2d0; font-size: 10px; }
 .console-spacer { flex: 1; }
+.console-percent { color: #b2dfff; font: 11px ui-monospace, Consolas, monospace; }
 .console-content { flex: 1; min-height: 0; overflow: auto; padding: 5px 8px; }
 .log-row { display: grid; grid-template-columns: 6px 66px 60px minmax(0, 1fr); align-items: baseline; column-gap: 9px; padding: 6px 7px; border-radius: 4px; color: #c9ccd3; font: 11px/1.4 ui-monospace, 'Cascadia Mono', Consolas, monospace; }
 .log-row:nth-child(odd) { background: #ffffff06; }

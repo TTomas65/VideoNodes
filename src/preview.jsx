@@ -24,8 +24,8 @@ export function Preview({ text, timeline, settings, background, time, size, labe
   useEffect(() => {
     const update = () => {
       draw.current = timeline
-        ? makeTimelineScene(canvas.current, timeline, settings, background, image)
-        : makeScene(canvas.current, text, settings, background, image);
+        ? makeTimelineScene(canvas.current, timeline, background, image)
+        : makeScene(canvas.current, text, background, image);
       draw.current(latestTime.current);
     };
     update();

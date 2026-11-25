@@ -34,38 +34,19 @@ function wrap(ctx, text, maxWidth) {
   return lines;
 }
 
-function prepareBackdrop(canvas, settings, background, image) {
+function prepareBackdrop(canvas, background, image) {
   const { width, height } = canvas;
   const context = canvas.getContext('2d');
+  if (!background) return () => {
+    context.fillStyle = '#000';
+    context.fillRect(0, 0, width, height);
+  };
   if (movingBackground(background)) return (time) => paintBackground(context, width, height, background, image, time);
   const backdrop = document.createElement('canvas');
   backdrop.width = width;
   backdrop.height = height;
   const bg = backdrop.getContext('2d');
-  if (background) {
-    paintBackground(bg, width, height, background, image, 0);
-  } else {
-    bg.fillStyle = settings.background;
-    bg.fillRect(0, 0, width, height);
-  }
-
-  if (!background && settings.style === 'ribbons') {
-    const gradient = bg.createRadialGradient(width * 0.87, height * 1.04, 0, width * 0.87, height * 1.04, Math.max(width, height) * 0.84);
-    gradient.addColorStop(0, '#526d9dbb');
-    gradient.addColorStop(0.38, '#3445758f');
-    gradient.addColorStop(1, '#080b1600');
-    bg.fillStyle = gradient;
-    bg.fillRect(0, 0, width, height);
-    for (let line = 0; line < 12; line += 1) {
-      const offset = line * height * 0.024;
-      bg.strokeStyle = `rgba(157, 184, 235, ${0.13 - line * 0.006})`;
-      bg.lineWidth = Math.max(0.7, height / 720);
-      bg.beginPath();
-      bg.moveTo(-width * 0.13, height * 1.13 - offset);
-      bg.bezierCurveTo(width * 0.39, height * 1.24 - offset, width * 0.65, height * 0.4 - offset * 0.48, width * 1.14, height * 0.45 - offset);
-      bg.stroke();
-    }
-  }
+  paintBackground(bg, width, height, background, image, 0);
 
   return () => context.drawImage(backdrop, 0, 0);
 }
@@ -135,8 +116,8 @@ function prepareText(canvas, text) {
   };
 }
 
-export function makeScene(canvas, text, settings, background, image) {
-  const drawBackground = prepareBackdrop(canvas, settings, background, image);
+export function makeScene(canvas, text, background, image) {
+  const drawBackground = prepareBackdrop(canvas, background, image);
   const drawText = text?.text.trim() ? prepareText(canvas, text) : null;
   return (time) => {
     drawBackground(time);
@@ -144,12 +125,12 @@ export function makeScene(canvas, text, settings, background, image) {
   };
 }
 
-export function makeTimelineScene(canvas, timeline, settings, background, image) {
-  const drawBackground = prepareBackdrop(canvas, settings, background, image);
-  const titles = timeline.scenes.map(({ text }) => prepareText(canvas, text));
+export function makeTimelineScene(canvas, timeline, background, image) {
+  const drawBackground = prepareBackdrop(canvas, background, image);
+  const titles = timeline.scenes.map(({ text }) => text ? prepareText(canvas, text) : null);
   return (time) => {
     drawBackground(time);
     const index = sceneAt(timeline, time);
-    if (index !== -1) titles[index](sceneTime(timeline.scenes[index], timeline.fps, time));
+    if (titles[index]) titles[index](sceneTime(timeline.scenes[index], timeline.fps, time));
   };
 }

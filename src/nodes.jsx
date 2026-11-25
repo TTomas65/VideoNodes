@@ -7,7 +7,7 @@ import { usableBackground } from './background';
 import { BackgroundFields } from './background-node';
 import { Color, Seconds, Select } from './fields';
 import { Preview } from './preview';
-import { makeTimeline } from './timeline';
+import { durationFor, makeTimeline, maxSceneSeconds } from './timeline';
 
 export const GraphContext = createContext(null);
 export const typeIcons = { text: Type, background: Image, render: Cog, video: Clapperboard };
@@ -22,22 +22,24 @@ function ChromeIcon({ type }) {
   return <span className={`chrome-icon chrome-${type}`} aria-hidden="true"><span /><span /><span /></span>;
 }
 
-function Card({ id, type, selected, children, input, output }) {
+function Card({ id, type, selected, children, input, output, sceneControls }) {
   const { deleteNode, resizeNode, nodes, edges } = useContext(GraphContext);
   const incoming = new Set(edges.filter((edge) => edge.target === id).map((edge) => edge.targetHandle ?? null));
   const outgoing = edges.some((edge) => edge.source === id);
-  const inputs = type === 'render' ? scenePorts : [{ id: null, label: input }];
+  const isRender = type === 'render';
+  const inputs = isRender ? scenePorts : [{ id: null, label: input }];
+  const outputPort = output && <span className={`port port-out${isRender ? ' blue' : ''}${type === 'background' ? ' port-background' : ''}`}>{output}<Handle type="source" position={Position.Right} className={outgoing ? 'is-wired' : ''} /></span>;
   const minWidth = cardWidths[type];
   const width = nodes.find((node) => node.id === id)?.width ?? minWidth;
   return <article className={`node-card node-${type}${selected ? ' is-selected' : ''}`} aria-label={label[type]}>
     <header className="node-header"><ChromeIcon type={type} /><strong>{label[type]}</strong>
       <button type="button" className="icon-button node-close nodrag" title={`${label[type]} törlése`} aria-label={`${label[type]} törlése`} onClick={() => deleteNode(id)}><X size={15} /></button>
     </header>
-    {inputs.map(({ id: handle, label: name }, index) => <div key={handle ?? 'main'} className={`port-row${type === 'render' ? ' scene-port' : ''}`}>
+    {inputs.map(({ id: handle, label: name }, index) => <div key={handle ?? 'main'} className={`port-row${isRender ? ' scene-port' : ''}`}>
       {name ? <span className={`port port-in${type === 'video' ? ' blue' : ''}`}><Handle type="target" id={handle} position={Position.Left} className={incoming.has(handle) ? 'is-wired' : ''} />{name}</span> : <span />}
-      {index === 0 && output && <span className={`port port-out${type === 'render' ? ' blue' : ''}${type === 'background' ? ' port-background' : ''}`}>{output}<Handle type="source" position={Position.Right} className={outgoing ? 'is-wired' : ''} /></span>}
+      {isRender ? sceneControls(index, name) : outputPort}
     </div>)}
-    {type === 'render' && <div className="port-row secondary-port"><span className="port port-in port-background"><Handle type="target" id={backgroundPort} position={Position.Left} className={incoming.has(backgroundPort) ? 'is-wired' : ''} />Háttér</span></div>}
+    {isRender && <div className="port-row secondary-port"><span className="port port-in port-background"><Handle type="target" id={backgroundPort} position={Position.Left} className={incoming.has(backgroundPort) ? 'is-wired' : ''} />Háttér</span>{outputPort}</div>}
     <div className="node-body nodrag nowheel">{children}</div>
     <NodeResizeControl className="card-resize nodrag" position="bottom-right" resizeDirection="horizontal" minWidth={minWidth} maxWidth={maxCardWidth} autoScale={false}>
       <button type="button" className="resize-grip" aria-label={type === 'video' ? 'Videókártya méretezése' : `${label[type]} kártya méretezése`}
@@ -83,30 +85,49 @@ function BackgroundNode({ id, data, selected }) {
 }
 
 function RenderNode({ id, data, selected }) {
-  const { nodes, edges, updateNode, runRender, rendering } = useContext(GraphContext);
+  const { nodes, edges, updateNode, runRender, rendering, outputs } = useContext(GraphContext);
   const set = (key, value) => updateNode(id, key, value);
   const active = rendering?.id === id;
-  const texts = sceneInputs(id, nodes, edges).flatMap((node) => node?.data.text.trim() ? [node.data] : []);
-  const { duration } = makeTimeline(texts, data);
-  return <Card id={id} type="render" selected={selected} output={formats[data.format].container}>
+  const texts = sceneInputs(id, nodes, edges).map((node) => node?.data);
+  const background = upstream(id, nodes, edges, backgroundPort)?.data;
+  const { scenes, duration } = makeTimeline(texts, data, usableBackground(background));
+  const sceneProgress = active ? rendering.scenes : outputs[id]?.scenes;
+
+  function setSceneDuration(index, value) {
+    if ((data.sceneDurations[index] ?? null) === value) return;
+    const lengths = [...data.sceneDurations];
+    lengths[index] = value;
+    set('sceneDurations', lengths);
+  }
+
+  function sceneControls(index, name) {
+    const progress = sceneProgress?.[index];
+    const placeholder = durationFor(data, index, texts[index]);
+    return <>
+      <div className="scene-timing nodrag nowheel">
+        {sceneProgress && <span className="scene-percent" aria-hidden="true">{progress === undefined ? '–' : `${progress}%`}</span>}
+        <Seconds value={data.sceneDurations[index]} placeholder={placeholder.toLocaleString('hu-HU', { maximumFractionDigits: 2 })}
+          label={`${name} hossza`} max={maxSceneSeconds} onChange={(value) => setSceneDuration(index, value)} />
+      </div>
+      {sceneProgress && (progress === undefined ? <span className="scene-progress-track inactive" aria-hidden="true" />
+        : <div className="scene-progress-track" role="progressbar" aria-label={`${name} renderelése`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+          <span style={{ width: `${progress}%` }} />
+        </div>)}
+    </>;
+  }
+
+  return <Card id={id} type="render" selected={selected} output={formats[data.format].container} sceneControls={sceneControls}>
     <label className="field">Felbontás<Select value={data.resolution} onChange={(event) => set('resolution', event.target.value)}>
       {Object.entries(resolutions).map(([key, { label: name, width, height }]) => <option value={key} key={key}>{width} × {height} · {name}</option>)}
     </Select></label>
-    <div className="fields-two">
-      <label className="field">Képkocka/mp<Select value={data.fps} onChange={(event) => set('fps', Number(event.target.value))}>{[24, 25, 30, 60].map((fps) => <option key={fps}>{fps}</option>)}</Select></label>
-      <label className="field">Videó min. hossza<Seconds value={data.duration} max={20} onChange={(value) => set('duration', value)} /></label>
-    </div>
-    <div className="fields-two text-style-fields">
-      <label className="field">Háttér<Select value={data.style} onChange={(event) => set('style', event.target.value)}><option value="ribbons">Fényívek</option><option value="solid">Egyszínű</option></Select></label>
-      <label className="field">Szín<Color value={data.background} onChange={(value) => set('background', value)} /></label>
-    </div>
+    <label className="field">Képkocka/mp<Select value={data.fps} onChange={(event) => set('fps', Number(event.target.value))}>{[24, 25, 30, 60].map((fps) => <option key={fps}>{fps}</option>)}</Select></label>
     <label className="field">Kimeneti formátum<Select aria-label="Kimeneti formátum" value={data.format} onChange={(event) => set('format', event.target.value)}>
       {Object.entries(formats).map(([key, { container, codec }]) => <option key={key} value={key}>{container} ({codec})</option>)}
     </Select></label>
     <label className="field">Renderelési minőség<Select aria-label="Renderelési minőség" value={data.crf} onChange={(event) => set('crf', Number(event.target.value))}>
       {qualities.map(({ crf, label: name }) => <option key={crf} value={crf}>{name} (CRF {crf})</option>)}
     </Select></label>
-    <div className="background-summary render-summary"><span>{texts.length} jelenet</span><span>{duration.toLocaleString('hu-HU', { maximumFractionDigits: 2 })} mp teljes hossz</span></div>
+    <div className="background-summary render-summary"><span>{scenes.length} jelenet</span><span>{duration.toLocaleString('hu-HU', { maximumFractionDigits: 2 })} mp teljes hossz</span></div>
     <button type="button" className="render-button" disabled={Boolean(rendering)} onClick={() => runRender(id)}>
       <Play size={13} fill="currentColor" /> {active ? `${Math.round(rendering.progress)}% · Renderelés` : 'Renderelés indítása'}
     </button>
@@ -161,9 +182,11 @@ function VideoNode({ id, data, selected, width }) {
   const output = render && outputs[render.id];
   const settings = render?.data ?? defaults.render;
   const texts = sceneInputs(render?.id, nodes, edges).map((node) => node?.data);
-  const timeline = useMemo(() => makeTimeline(texts.filter((text) => text?.text.trim()), settings), [settings, ...texts]);
+  const hasBackground = Boolean(background);
+  const timeline = useMemo(() => makeTimeline(texts, settings, hasBackground), [settings, hasBackground, ...texts]);
   const duration = output?.duration ?? timeline.duration;
-  const posterTime = ((timeline.scenes[0]?.end ?? 1) - 1) / timeline.fps;
+  const firstScene = timeline.scenes[0];
+  const posterTime = firstScene?.text ? (Math.min(firstScene.end, firstScene.animationEnd) - 1) / timeline.fps : 0;
   const previewSize = Math.max(480, Math.ceil((width ?? cardWidths.video) / 128) * 128);
   const video = useRef(null);
   const screen = useRef(null);
@@ -221,7 +244,7 @@ function VideoNode({ id, data, selected, width }) {
       <span className="screen-label"><span />{output ? 'RENDERELT VIDEÓ' : 'ELŐNÉZET'}</span>
     </div>
     <input className="scrubber" type="range" min={0} max={duration} step={0.01} value={Math.min(time, duration)} disabled={!playable}
-      aria-label="Lejátszási pozíció" onChange={(event) => seek(Number(event.target.value))} style={{ '--played': `${Math.min(100, time / duration * 100)}%` }} />
+      aria-label="Lejátszási pozíció" onChange={(event) => seek(Number(event.target.value))} style={{ '--played': `${duration ? Math.min(100, time / duration * 100) : 0}%` }} />
     <div className="player-controls">
       <button className="icon-button player-play" type="button" title={playing ? 'Szünet' : 'Lejátszás'} aria-label={playing ? 'Szünet' : 'Lejátszás'} disabled={!playable} onClick={toggle}>{playing ? <Pause size={13} fill="currentColor" /> : <Play size={13} fill="currentColor" />}</button>
       <button className="icon-button" type="button" title="Ugrás a végére" aria-label="Ugrás a végére" disabled={!playable} onClick={() => seek(duration)}><FastForward size={13} /></button>

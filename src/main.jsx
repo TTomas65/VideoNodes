@@ -9,7 +9,7 @@ import { descriptions, edgeTypes, GraphContext, NodeIcon, nodeTypes } from './no
 import { backgroundPort, canConnect, cardWidths, defaults, edgeType, effects, formats, imageDataSize, label, makeNode, maxCardWidth, readProject, resolutions, sceneInputs, scenePorts, serialize, upstream } from './project';
 import { maxProjectImageData, usableBackground } from './background';
 import { getInitialProject, saveProject } from './project-storage';
-import { makeTimeline } from './timeline';
+import { makeTimeline, renderSceneProgress } from './timeline';
 
 const time = () => new Intl.DateTimeFormat('hu', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Budapest' }).format(new Date());
 const fileStem = (title) => title.trim().replace(/[^\p{L}\p{N} _-]+/gu, '-').replace(/\s+/g, '-') || 'present-fflow';
@@ -65,6 +65,7 @@ function App({ project }) {
   const selected = nodes.find((node) => node.selected);
   const selectedEdge = edges.find((edge) => edge.selected);
   const result = Object.values(outputs).at(-1);
+  const overallProgress = rendering?.progress ?? (result ? 100 : undefined);
   const availableRenderer = nodes.find((node) => node.type === 'render' && (sceneInputs(node.id, nodes, edges).some(Boolean) || upstream(node.id, nodes, edges, backgroundPort)));
   const renderFormat = formats[(selected?.type === 'render' ? selected.data.format : result?.format ?? availableRenderer?.data.format) ?? defaults.render.format];
   const searchResults = nodes.filter((node) => `${label[node.type]} ${node.data.text ?? ''}`.toLocaleLowerCase('hu').includes(query.toLocaleLowerCase('hu').trim()));
@@ -227,30 +228,35 @@ function App({ project }) {
     const state = current.current;
     const renderer = state.nodes.find((node) => node.id === id && node.type === 'render');
     const inputs = sceneInputs(id, state.nodes, state.edges);
-    const texts = inputs.flatMap((node) => node?.data.text.trim() ? [node.data] : []);
-    const empty = inputs.findIndex((node) => node && !node.data.text.trim());
+    const texts = inputs.map((node) => node?.data);
+    const hasText = texts.some((text) => text?.text.trim());
+    const empty = texts.findIndex((text) => text && !text.text.trim());
     const background = upstream(id, state.nodes, state.edges, backgroundPort)?.data;
     const problem = !renderer || (!inputs.some(Boolean) && !background) ? 'Köss szöveg- vagy háttérkártyát az FFmpeg renderkártyához.'
       : background && !usableBackground(background) ? 'Tölts fel egy képet a csatlakoztatott Háttér kártyára.'
-      : empty !== -1 && (texts.length || !background) ? `A(z) ${scenePorts[empty].label} szövege üres.` : '';
+      : empty !== -1 && (hasText || !background) ? `A ${scenePorts[empty].label} bemenetre kötött kártya szövege üres.` : '';
     if (problem) { announce(problem, 'error', 'FFmpeg'); setToast(problem); return; }
     busy.current = true;
     const signature = sceneSignature(id, state.nodes, state.edges);
     const settings = renderer.data;
-    const timeline = makeTimeline(texts, settings);
+    const timeline = makeTimeline(texts, settings, usableBackground(background));
     const { container, codec } = formats[settings.format];
-    setRendering({ id, progress: 2, phase: 'FFmpeg betöltése' });
+    function report({ progress, phase, prepared = 0, encoded = 0 }) {
+      setRendering({ id, progress, phase, scenes: renderSceneProgress(timeline, prepared, encoded) });
+    }
+    report({ progress: 0, phase: 'FFmpeg betöltése' });
     announce(`Renderelés elindult · ${container} / ${codec} · ${settings.resolution.replace('x', ' × ')} · ${settings.fps} fps · CRF ${settings.crf}`, 'info', 'FFmpeg');
     try {
       const { renderVideo } = await import('./render');
-      const blob = await renderVideo(timeline, settings, (progress, phase) => setRendering({ id, progress, phase }), background);
+      const blob = await renderVideo(timeline, settings, report, background);
       if (!sameScene(signature, sceneSignature(id, current.current.nodes, current.current.edges))) {
         announce('A jelenet megváltozott a renderelés alatt. Indíts új renderelést.', 'info', 'FFmpeg');
         setToast('A jelenet megváltozott. Indíts új renderelést.');
         return;
       }
       const url = URL.createObjectURL(blob);
-      const output = { url, signature, format: settings.format, name: `${fileStem(state.name)}.${settings.format}`, duration: timeline.duration };
+      const scenes = renderSceneProgress(timeline, timeline.frameCount, timeline.frameCount);
+      const output = { url, signature, format: settings.format, name: `${fileStem(state.name)}.${settings.format}`, duration: timeline.duration, scenes };
       const previous = outputs[id];
       setOutputs((old) => ({ ...old, [id]: output }));
       if (previous) URL.revokeObjectURL(previous.url);
@@ -337,13 +343,14 @@ function App({ project }) {
             <button type="button" className={consoleTab === 'Konzol' ? 'active' : ''} onClick={() => { setConsoleTab('Konzol'); setConsoleOpen(true); }}><Terminal size={15} /> Konzol <span className="log-count">{logs.length}</span></button>
             <button type="button" className={consoleTab === 'Renderelés' ? 'active' : ''} onClick={() => { setConsoleTab('Renderelés'); setConsoleOpen(true); }}><Activity size={15} /> Renderelés</button>
             <span className="console-spacer" />
+            {overallProgress !== undefined && <span className="console-percent" title="Teljes renderelés">{Math.round(overallProgress)}%</span>}
             <IconButton icon={Trash2} size={14} title="Napló ürítése" onClick={() => setLogs([])} />
           </div>
           {consoleOpen && <div className="console-content" role="log" aria-label="Eseménynapló">
             {[...shownLogs].reverse().map((entry) => <div className={`log-row ${entry.kind}`} key={entry.id}><span className="log-indicator" /><time>{entry.at}</time><span className="log-area">{entry.area}</span><span>{entry.message}</span></div>)}
             {shownLogs.length === 0 && <div className="console-empty">Még nincs bejegyzés.</div>}
           </div>}
-          {rendering && <div className="render-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(rendering.progress)} aria-label={rendering.phase}><span style={{ width: `${rendering.progress}%` }} /></div>}
+          {overallProgress !== undefined && <div className="render-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(overallProgress)} aria-label="Teljes renderelés"><span style={{ width: `${overallProgress}%` }} /></div>}
         </section>
       </main>
 
@@ -375,7 +382,7 @@ function App({ project }) {
     <input hidden ref={importInput} type="file" accept=".json,application/json" onChange={importProject} />
     <dialog ref={help} className="help-dialog"><header><h2>A munkatér használata</h2><IconButton icon={X} title="Súgó bezárása" onClick={() => help.current.close()} /></header>
       <p>A kártyát a fejlécével mozgathatod, a jobb alsó sarkát húzva méretezheted. A vezeték középső pontjára kattintva megjelenik a Törlés gomb.</p>
-      <p>A Szöveg kártyákat a Jelenet 01–10 bemenetekre kösd. A renderelő sorszám szerint halad, a szabad bemeneteket átugorja. A Háttér bemenet az egész videóhoz ad hátteret.</p>
+      <p>A Szöveg kártyákat a Jelenet 01–10 bemenetekre kösd, és az egyes sorokban add meg a jelenetek hosszát. A renderelő sorszám szerint halad. A Háttér bemenet az egész videóhoz ad hátteret. Szabad Háttér bemenetnél a videó háttere fekete.</p>
       <dl><dt>Projekt mentése</dt><dd><kbd>Ctrl</kbd> + <kbd>S</kbd></dd><dt>Keresés</dt><dd><kbd>Ctrl</kbd> + <kbd>K</kbd></dd><dt>Kijelölés törlése</dt><dd><kbd>Delete</kbd></dd><dt>Nagyítás</dt><dd>Egérgörgő</dd></dl>
     </dialog>
   </div>;

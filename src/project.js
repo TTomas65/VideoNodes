@@ -1,4 +1,5 @@
 import { defaultBackground, hexColor, maxProjectImageData, range, readBackground } from './background';
+import { framesFor, maxSceneSeconds } from './timeline';
 
 export const effects = {
   slide: 'Beúsztatás', fog: 'Ködből előtűnés', bounce: 'Bepattogás',
@@ -27,7 +28,7 @@ export const maxCardWidth = 920;
 
 export const defaults = {
   text: { text: 'A történet\nitt kezdődik.', font: 'Inter', color: '#f2f3fa', effect: 'slide', seconds: 1.2 },
-  render: { resolution: '1920x1080', fps: 30, duration: 4, background: '#111520', style: 'ribbons', format: 'mp4', crf: 20 },
+  render: { resolution: '1920x1080', fps: 30, sceneDurations: [], format: 'mp4', crf: 20 },
   video: { loop: false },
   background: defaultBackground,
 };
@@ -82,6 +83,7 @@ export function readProject(value) {
     throw new Error('A fájl nem érvényes Present Fflow projekt.');
   }
   const ids = new Set();
+  const legacyLengths = new Map();
   const nodes = value.nodes.map((item) => {
     if (!item || !Object.hasOwn(defaults, item.type) || typeof item.id !== 'string' || !item.id || ids.has(item.id)) {
       throw new Error('A projekt hibás vagy ismétlődő kártyát tartalmaz.');
@@ -102,12 +104,13 @@ export function readProject(value) {
     if (item.type === 'render') Object.assign(node.data, {
       resolution: Object.hasOwn(resolutions, data.resolution) ? data.resolution : defaults.render.resolution,
       fps: [24, 25, 30, 60].includes(data.fps) ? data.fps : defaults.render.fps,
-      duration: range(data.duration, 0.1, 20, defaults.render.duration),
-      background: hexColor(data.background, defaults.render.background),
-      style: data.style === 'solid' ? 'solid' : defaults.render.style,
+      sceneDurations: scenePorts.map((_, index) => range(data.sceneDurations?.[index], 0.1, maxSceneSeconds, null)),
       format: Object.hasOwn(formats, data.format) ? data.format : defaults.render.format,
       crf: qualities.some(({ crf }) => crf === data.crf) ? data.crf : defaults.render.crf,
     });
+    if (item.type === 'render' && !Array.isArray(data.sceneDurations)) {
+      legacyLengths.set(node.id, range(data.duration, 0.1, maxSceneSeconds, 4));
+    }
     if (item.type === 'video') node.data.loop = data.loop === true;
     if (item.type === 'background') node.data = readBackground(data);
     return node;
@@ -121,6 +124,16 @@ export function readProject(value) {
     const connection = { source: item.source, target: item.target, targetHandle: isLegacyScene ? scenePorts[0].id : item.targetHandle ?? null };
     if (!canConnect(connection, nodes, edges)) throw new Error('A projekt érvénytelen összekötést tartalmaz.');
     edges.push({ ...connection, id: crypto.randomUUID(), type: edgeType });
+  }
+  for (const node of nodes) {
+    if (!legacyLengths.has(node.id)) continue;
+    const { fps, sceneDurations } = node.data;
+    const minimum = framesFor(legacyLengths.get(node.id), fps);
+    const lengths = sceneInputs(node.id, nodes, edges).map((source) => source?.data.text.trim() ? framesFor(source.data.seconds, fps) : 0);
+    const last = lengths.findLastIndex(Boolean);
+    const hold = minimum - lengths.reduce((sum, frames) => sum + frames, 0);
+    if (last === -1) sceneDurations[0] = minimum / fps;
+    else if (hold > 0) sceneDurations[last] = (lengths[last] + hold) / fps;
   }
   const viewport = value.viewport ? {
     x: range(value.viewport.x, -150000, 150000, 0), y: range(value.viewport.y, -150000, 150000, 0),
