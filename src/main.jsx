@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { addEdge, Background, MiniMap, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow } from '@xyflow/react';
-import { Activity, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, ChevronRight, CircleHelp, Command, FileVideo, Focus, Folder, Grid3X3, Layers3, LayoutGrid, Minus, PanelLeft, PanelRight, Play, Plus, Save, Search, Settings2, Terminal, Trash2, X } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, ChevronRight, CircleHelp, Command, FileVideo, Focus, Folder, Grid3X3, Layers3, LayoutGrid, LayoutTemplate, Minus, PanelLeft, PanelRight, Play, Plus, Save, Search, Settings2, Terminal, Trash2, X } from 'lucide-react';
 import '@fontsource-variable/inter';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
-import brandIcon from '../ikons/ikon01.png';
+import brandIcon from '../ikons/ikon02.png';
 import { descriptions, edgeTypes, GraphContext, NodeIcon, nodeTypes } from './nodes';
-import { canConnect, cardWidths, defaults, edgeType, effects, formats, imageDataSize, label, makeNode, maxCardWidth, readProject, renderSources, resolutions, scenePorts, serialize } from './project';
+import { canConnect, cardWidths, defaults, edgeType, effects, formats, imageDataSize, label, makeExample, makeNode, maxCardWidth, minCardWidths, readProject, renderSources, resolutions, scenePorts, serialize } from './project';
 import { maxProjectImageData, usableBackground } from './background';
 import { getInitialProject, saveProject } from './project-storage';
 import { makeTimeline, renderSceneProgress } from './timeline';
@@ -16,7 +16,8 @@ const time = () => new Intl.DateTimeFormat('hu', { hour: '2-digit', minute: '2-d
 const fileStem = (title) => title.trim().replace(/[^\p{L}\p{N} _-]+/gu, '-').replace(/\s+/g, '-') || 'present-fflow';
 const log = (message, kind = 'info', area = 'Projekt') => ({ id: crypto.randomUUID(), at: time(), message, kind, area });
 const nodeKinds = Object.keys(label);
-const cardHeights = { text: 410, background: 335, render: 720, video: 309 };
+const cardHeights = { text: 410, background: 335, render: 720, video: 500 };
+const starterFit = { padding: { top: '8%', right: '5%', bottom: '4%', left: '4%' }, maxZoom: 1 };
 const sceneSignature = (id, nodes, edges) => {
   const render = nodes.find((node) => node.id === id && node.type === 'render');
   if (!render) return null;
@@ -130,7 +131,7 @@ function App({ project }) {
   function resizeNode(id, width) {
     const existing = current.current.nodes.find((node) => node.id === id);
     if (!existing) return;
-    const nextWidth = Math.min(maxCardWidth, Math.max(cardWidths[existing.type], width));
+    const nextWidth = Math.min(maxCardWidth, Math.max(minCardWidths[existing.type], width));
     if (existing.width === nextWidth) return;
     setNodes((old) => old.map((node) => node.id === id ? { ...node, width: nextWidth } : node));
     setDirty(true);
@@ -161,10 +162,10 @@ function App({ project }) {
     if (nodes.length >= 100) { setToast('Egy projektbe legfeljebb 100 kártya kerülhet.'); return; }
     const box = canvas.current.getBoundingClientRect();
     const center = flow.screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
-    const position = dropPosition ?? { x: Math.round(center.x - 122), y: Math.round(center.y - 80) };
+    const width = cardWidths[type];
+    const position = dropPosition ?? { x: Math.round(center.x - width / 2), y: Math.round(center.y - 80) };
     if (!dropPosition) {
       const gap = 32;
-      const width = cardWidths[type];
       const nearby = nodes.filter((node) => position.x < node.position.x + (node.measured?.width ?? node.width) + gap && position.x + width + gap > node.position.x)
         .sort((a, b) => a.position.y - b.position.y);
       for (const node of nearby) {
@@ -175,7 +176,10 @@ function App({ project }) {
     const node = { ...makeNode(type, position), selected: true };
     setNodes((old) => [...old.map((item) => ({ ...item, selected: false })), node]);
     setEdges((old) => old.map((edge) => ({ ...edge, selected: false })));
-    if (!dropPosition) flow.setCenter(position.x + cardWidths[type] / 2, position.y + cardHeights[type] / 2, { zoom: Math.max(0.68, flow.getZoom()), duration: 320 });
+    if (!dropPosition) {
+      const zoom = Math.min(Math.max(0.68, flow.getZoom()), (box.width - 32) / width, (box.height - 32) / cardHeights[type]);
+      flow.setCenter(position.x + width / 2, position.y + cardHeights[type] / 2, { zoom: Math.max(0.22, zoom), duration: 320 });
+    }
     setDirty(true);
     announce(`Kártya hozzáadva · ${label[type]}`);
   }
@@ -183,7 +187,7 @@ function App({ project }) {
   function selectNode(node) {
     setNodes((old) => old.map((item) => ({ ...item, selected: item.id === node.id })));
     setEdges((old) => old.map((edge) => ({ ...edge, selected: false })));
-    flow.setCenter(node.position.x + (node.measured?.width ?? 246) / 2, node.position.y + (node.measured?.height ?? 320) / 2,
+    flow.setCenter(node.position.x + (node.measured?.width ?? node.width) / 2, node.position.y + (node.measured?.height ?? cardHeights[node.type]) / 2,
       { zoom: flow.getZoom(), duration: 300 });
     setSearching(false);
     searchInput.current.blur();
@@ -196,6 +200,26 @@ function App({ project }) {
     announce('A konfiguráció exportálva.', 'success');
   }
 
+  function loadProject(next, fitOptions) {
+    setNodes(next.nodes.map((node, index) => ({ ...node, selected: index === 0 })));
+    setEdges(next.edges);
+    for (const output of Object.values(outputs)) URL.revokeObjectURL(output.url);
+    setOutputs({});
+    setName(next.name);
+    setDirty(true);
+    requestAnimationFrame(() => {
+      if (next.viewport) flow.setViewport(next.viewport);
+      else flow.fitView(fitOptions);
+    });
+  }
+
+  function openExample() {
+    if (dirty && !window.confirm('A mintaprojekt megnyitása lecseréli a vászon mentetlen módosításait. Megnyitod a mintát?')) return;
+    loadProject(makeExample(), starterFit);
+    announce('A mintaprojekt megnyitva.', 'success');
+    setToast('A mintaprojekt megnyitva.');
+  }
+
   async function importProject(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -204,16 +228,7 @@ function App({ project }) {
       if (file.size > maxProjectImageData + 1_000_000) throw new Error('A projektfájl túl nagy.');
       const next = readProject(JSON.parse(await file.text()));
       if (dirty && !window.confirm('A betöltés lecseréli a jelenlegi vásznat. Betöltöd a projektet?')) return;
-      setNodes(next.nodes.map((node, index) => ({ ...node, selected: index === 0 })));
-      setEdges(next.edges);
-      for (const output of Object.values(outputs)) URL.revokeObjectURL(output.url);
-      setOutputs({});
-      setName(next.name);
-      setDirty(true);
-      requestAnimationFrame(() => {
-        if (next.viewport) flow.setViewport(next.viewport);
-        else flow.fitView({ padding: 0.14, maxZoom: 1 });
-      });
+      loadProject(next, { padding: 0.14, maxZoom: 1 });
       announce(`Projekt betöltve · ${next.name}`, 'success');
       setToast('Projekt betöltve.');
     } catch (error) {
@@ -274,7 +289,7 @@ function App({ project }) {
   return <div className="studio">
     <header className="topbar">
       <div className="brand">
-        <img className="brand-mark" src={brandIcon} width={38} height={38} alt="" />
+        <img className="brand-mark" src={brandIcon} width={58} height={58} alt="" />
         <div>
           <strong className="brand-name">VideoNodes</strong>
           <div className="brand-details"><span>Videó prezentáció készítő műhely</span><b>Verzió: 0.15</b></div>
@@ -312,6 +327,7 @@ function App({ project }) {
       <main className="editor" aria-label="Videófolyamat szerkesztője">
         <div className="editor-bar">
           <div className="editor-title">{!sidebar && <IconButton icon={PanelLeft} title="Oldalsáv megjelenítése" onClick={() => setSidebar(true)} />}<span className="editor-icon"><Layers3 size={15} /></span><h1>Folyamat</h1><span className="editor-breadcrumb"><ChevronRight size={14} />{name || project.name}</span></div>
+          <button type="button" className="button sample-button" aria-label="Mintaprojekt megnyitása" title="Mintaprojekt megnyitása" disabled={Boolean(rendering)} onClick={openExample}><LayoutTemplate size={14} /> Minta</button>
           <span className="graph-count">{nodes.length} kártya <span>·</span> {edges.length} kapcsolat</span>
           <IconButton icon={PanelRight} title="Tulajdonságpanel" aria-pressed={inspector} onClick={() => setInspector(!inspector)} />
         </div>
@@ -320,7 +336,7 @@ function App({ project }) {
           onDrop={(event) => { event.preventDefault(); addNode(event.dataTransfer.getData('application/present-fflow'), flow.screenToFlowPosition({ x: event.clientX, y: event.clientY })); }}>
           <GraphContext.Provider value={{ nodes, edges, updateNode, updateImage, resizeNode, deleteNode, selectEdge, deleteEdge, runRender, rendering, outputs, download }}>
             <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} colorMode="dark"
-              fitView={!project.viewport} fitViewOptions={{ padding: 0.12, maxZoom: 1 }} defaultViewport={project.viewport}
+              fitView={!project.viewport} fitViewOptions={project.saved ? { padding: 0.12, maxZoom: 1 } : starterFit} defaultViewport={project.viewport}
               minZoom={0.22} maxZoom={2} nodesDraggable edgesReconnectable={false} deleteKeyCode={['Backspace', 'Delete']}
               zoomOnDoubleClick={false} onMove={(_, viewport) => setZoom(viewport.zoom)} onInit={(instance) => setZoom(instance.getZoom())}
               onNodesChange={(changes) => { if (changes.some(({ type, dragging, resizing }) => type === 'remove' || (type === 'position' && dragging === false) || (type === 'dimensions' && resizing === false))) setDirty(true); changeNodes(changes); }}

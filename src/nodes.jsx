@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useId, useMemo, useRef, useState 
 import { createPortal } from 'react-dom';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
 import { Blend, Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Trash2, Type, X } from 'lucide-react';
-import { backgroundPort, cardWidths, defaults, effects, fonts, formats, label, linkedBackground, maxCardWidth, outgoingRender, qualities, renderSources, resolutions, scenePorts, upstream } from './project';
+import { backgroundPort, cardWidths, defaults, effects, fonts, formats, label, linkedBackground, maxCardWidth, minCardWidths, outgoingRender, qualities, renderSources, resolutions, scenePorts, upstream } from './project';
 import { BackgroundFields } from './background-node';
 import { Color, Seconds, Select } from './fields';
 import { Preview } from './preview';
@@ -31,8 +31,8 @@ function Card({ id, type, selected, children, input, output, sceneControls }) {
     <Handle type="target" id={handle} position={Position.Left} className={incoming.has(handle) ? 'is-wired' : ''} />{name}
   </span>;
   const outputPort = output && <span className={`port port-out${isRender ? ' blue' : ''}${type === 'background' ? ' port-background' : ''}`}>{output}<Handle type="source" position={Position.Right} className={outgoing ? 'is-wired' : ''} /></span>;
-  const minWidth = cardWidths[type];
-  const width = nodes.find((node) => node.id === id)?.width ?? minWidth;
+  const minWidth = minCardWidths[type];
+  const width = nodes.find((node) => node.id === id)?.width ?? cardWidths[type];
   return <article className={`node-card node-${type}${selected ? ' is-selected' : ''}`} aria-label={label[type]}>
     <header className="node-header"><ChromeIcon type={type} /><strong>{label[type]}</strong>
       <button type="button" className="icon-button node-close nodrag" title={`${label[type]} törlése`} aria-label={`${label[type]} törlése`} onClick={() => deleteNode(id)}><X size={15} /></button>

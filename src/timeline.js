@@ -1,5 +1,5 @@
 export const maxSceneSeconds = 20;
-const defaultSceneSeconds = 4;
+export const defaultSceneSeconds = 4;
 
 export const framesFor = (seconds, fps) => Math.max(1, Math.ceil(seconds * fps - 1e-8));
 export const durationFor = (settings, port, text) => settings.sceneDurations[port] ?? text?.seconds ?? defaultSceneSeconds;

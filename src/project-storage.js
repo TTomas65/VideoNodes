@@ -1,4 +1,4 @@
-import { example, readProject, storageKey } from './project';
+import { makeExample, readProject, storageKey } from './project';
 
 function accessSnapshot(mode, operate) {
   return new Promise((resolve, reject) => {
@@ -34,5 +34,5 @@ export async function getInitialProject() {
     const legacy = localStorage.getItem(storageKey);
     if (legacy) return { ...readProject(JSON.parse(legacy)), saved: true };
   } catch { /* The sample also works when browser storage is disabled. */ }
-  return example;
+  return makeExample();
 }

@@ -1,5 +1,5 @@
 import { defaultBackground, hexColor, maxProjectImageData, range, readBackground } from './background';
-import { framesFor, maxSceneSeconds } from './timeline';
+import { defaultSceneSeconds, framesFor, maxSceneSeconds } from './timeline';
 
 export const effects = {
   slide: 'Beúsztatás', fog: 'Ködből előtűnés', bounce: 'Bepattogás',
@@ -23,15 +23,9 @@ export const qualities = [
   { crf: 20, label: 'Kiegyensúlyozott' },
   { crf: 15, label: 'Stúdió minőség' },
 ];
-export const cardWidths = { text: 246, background: 246, render: 246, video: 264 };
+export const cardWidths = { text: 296, background: 294, render: 404, video: 572 };
+export const minCardWidths = { text: 246, background: 246, render: 246, video: 264 };
 export const maxCardWidth = 920;
-
-export const defaults = {
-  text: { text: 'A történet\nitt kezdődik.', font: 'Inter', color: '#f2f3fa', effect: 'slide', seconds: 1.2 },
-  render: { resolution: '1920x1080', fps: 30, sceneDurations: [], format: 'mp4', crf: 20 },
-  video: { loop: false },
-  background: defaultBackground,
-};
 
 export const label = { text: 'Szöveg', background: 'Háttér', render: 'FFmpeg render', video: 'Videólejátszó' };
 export const edgeType = 'signal';
@@ -42,30 +36,34 @@ export const scenePorts = Array.from({ length: 10 }, (_, index) => {
   return { id: `scene-${number}`, label: `Jelenet ${number}` };
 });
 
+export const defaults = {
+  text: { text: 'A történet\nitt kezdődik.', font: 'Inter', color: '#f2f3fa', effect: 'slide', seconds: 1.2 },
+  render: { resolution: '1920x1080', fps: 30, sceneDurations: scenePorts.map(() => defaultSceneSeconds), format: 'mp4', crf: 20 },
+  video: { loop: false },
+  background: defaultBackground,
+};
+
 export const makeNode = (type, position, id = crypto.randomUUID()) => ({
   id, type, position, data: { ...defaults[type] }, dragHandle: '.node-header',
   width: cardWidths[type],
 });
 
-const exampleText = makeNode('text', { x: 0, y: 0 }, 'text-1');
-const exampleBackground = makeNode('background', { x: 6, y: 478 }, 'background-1');
-const exampleRender = makeNode('render', { x: 387, y: 0 }, 'render-1');
-const exampleVideo = makeNode('video', { x: 900, y: -3 }, 'video-1');
+const exampleName = 'Nyitó animáció';
 
-export const example = {
-  name: 'Nyitó animáció',
+export const makeExample = () => ({
+  name: exampleName,
   nodes: [
-    { ...exampleText, width: 296 },
-    { ...exampleBackground, width: 294 },
-    { ...exampleRender, width: 404, data: { ...exampleRender.data, sceneDurations: scenePorts.map(() => 4) } },
-    { ...exampleVideo, width: 572 },
+    makeNode('text', { x: 0, y: 0 }, 'text-1'),
+    makeNode('background', { x: 6, y: 478 }, 'background-1'),
+    makeNode('render', { x: 387, y: 0 }, 'render-1'),
+    makeNode('video', { x: 900, y: -3 }, 'video-1'),
   ],
   edges: [
     { id: 'edge-1', source: 'text-1', target: 'render-1', targetHandle: scenePorts[0].id, type: edgeType },
     { id: 'edge-2', source: 'render-1', target: 'video-1', type: edgeType },
     { id: 'edge-3', source: 'background-1', target: 'render-1', targetHandle: backgroundPort, type: edgeType },
   ],
-};
+});
 
 export function canConnect({ source, target, targetHandle = null }, nodes, edges) {
   const from = nodes.find((node) => node.id === source);
@@ -120,7 +118,7 @@ export function readProject(value) {
     const node = makeNode(item.type, {
       x: range(item.position?.x, -50000, 50000, 0), y: range(item.position?.y, -50000, 50000, 0),
     }, item.id);
-    node.width = range(item.width, cardWidths[item.type], maxCardWidth, cardWidths[item.type]);
+    node.width = range(item.width, minCardWidths[item.type], maxCardWidth, cardWidths[item.type]);
     const data = item.data ?? {};
     if (item.type === 'text') Object.assign(node.data, {
       text: typeof data.text === 'string' ? data.text.slice(0, 360) : defaults.text.text,
@@ -137,7 +135,7 @@ export function readProject(value) {
       crf: qualities.some(({ crf }) => crf === data.crf) ? data.crf : defaults.render.crf,
     });
     if (item.type === 'render' && !Array.isArray(data.sceneDurations)) {
-      legacyLengths.set(node.id, range(data.duration, 0.1, maxSceneSeconds, 4));
+      legacyLengths.set(node.id, range(data.duration, 0.1, maxSceneSeconds, defaultSceneSeconds));
     }
     if (item.type === 'video') node.data.loop = data.loop === true;
     if (item.type === 'background') node.data = readBackground(data);
@@ -167,6 +165,6 @@ export function readProject(value) {
     x: range(value.viewport.x, -150000, 150000, 0), y: range(value.viewport.y, -150000, 150000, 0),
     zoom: range(value.viewport.zoom, 0.22, 2, 1),
   } : undefined;
-  return { name: typeof value.name === 'string' ? value.name.trim().slice(0, 64) || example.name : example.name, nodes, edges, viewport };
+  return { name: typeof value.name === 'string' ? value.name.trim().slice(0, 64) || exampleName : exampleName, nodes, edges, viewport };
 }
 
