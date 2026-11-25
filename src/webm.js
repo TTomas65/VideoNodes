@@ -43,6 +43,7 @@ export async function encodeWebm({ canvas, draw, frameCount, animatedFrames, set
       const encodingFrame = await engine.av_frame_clone(sceneFrame);
       if (!encodingFrame) throw new Error('A VP9 képkocka másolása sikertelen.');
       const packets = await engine.ff_encode_multi(encoder, frame, packet, [encodingFrame], index === frameCount - 1);
+      for (const encoded of packets) encoded.duration ||= 1;
       await engine.ff_write_multi(muxer, packet, packets);
       if (index % 3 === 0) report(7 + ((index + 1) / frameCount) * 90, 'WebM kódolása');
     }
