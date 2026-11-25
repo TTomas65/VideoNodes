@@ -21,6 +21,15 @@ A Vite kiírja a megnyitható helyi címet. A kiadási változatot az `npm run b
 
 Kártyát kattintással vagy húzással adhatsz hozzá a kártyatárból. A kimeneti csatlakozót húzd a következő kártya bemenetére. Kijelölt kártyát vagy kapcsolatot a `Delete` billentyűvel törölhetsz.
 
+## Háttérkártya
+
+Add hozzá a **Háttér** kártyát a kártyatárból, és kösd az **FFmpeg render** kártya **Háttér** bemenetére. A háttér a szöveg mögött jelenik meg. Ha csak háttér van csatlakoztatva, önálló videóként is renderelhető.
+
+- **Képfeltöltés.** Válassz böngészőben megnyitható képet legfeljebb 25 MB méretig. Alakítsd ki az illesztést, a képkivágást, a nagyítást, az átlátszatlanságot és a mögöttes alapszínt. A böngésző állóképpé alakítja a fájlt a mentéshez.
+- **Színátmenet és animáció.** Nyisd meg a **Háttér szerkesztése** ablakot. Válassz mintát, vagy állíts be legfeljebb öt színt, lineáris vagy radiális átmenetet, illetve fényfoltokat. A statikus mód mellett a forgatás, a sodródás és a pulzálás is beállítható. Az **Alkalmazás** átveszi az élő előnézet beállításait.
+
+A feltöltött háttérképet a böngésző menti, és a JSON-export is tartalmazza. A kép megjelenik a szövegelőnézetben, a videólejátszóban és a kész MP4- vagy WebM-fájlban.
+
 A **Mentés** ebben a böngészőben tárolja a konfigurációt. Az elrendezés és a beállítások JSON-fájlba exportálhatók, majd ugyanonnan visszatölthetők. A videókat külön töltheted le. A böngésző a formátum első renderelésekor tölti be a kódolót. Az MP4 motorja körülbelül 32 MB, a WebM motorja körülbelül 4,5 MB. A videó felső időkorlátja 20 másodperc, az animációé 10 másodperc.
 
 ## Könyvtárak

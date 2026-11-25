@@ -1,13 +1,16 @@
 import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BaseEdge, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
-import { Blend, ChevronDown, Clapperboard, Cog, Download, Eye, FastForward, Maximize, Pause, Play, Repeat2, RotateCcw, Type, X } from 'lucide-react';
-import { defaults, effects, fonts, formats, label, qualities, resolutions, upstream, videoSize } from './project';
-import { makeScene } from './scene';
+import { Blend, Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Type, X } from 'lucide-react';
+import { backgroundPort, defaults, effects, fonts, formats, label, outgoingRender, qualities, resolutions, upstream, videoSize } from './project';
+import { usableBackground } from './background';
+import { BackgroundFields } from './background-node';
+import { Color, Seconds, Select } from './fields';
+import { Preview } from './preview';
 
 export const GraphContext = createContext(null);
-export const typeIcons = { text: Type, render: Cog, video: Clapperboard };
-export const descriptions = { text: 'Címek és animációk', render: 'MP4 és WebM videó', video: 'Előnézet és lejátszás' };
+export const typeIcons = { text: Type, background: Image, render: Cog, video: Clapperboard };
+export const descriptions = { text: 'Címek és animációk', background: 'Kép és színátmenet', render: 'MP4 és WebM videó', video: 'Előnézet és lejátszás' };
 
 export function NodeIcon({ type }) {
   const Icon = typeIcons[type];
@@ -18,30 +21,10 @@ function ChromeIcon({ type }) {
   return <span className={`chrome-icon chrome-${type}`} aria-hidden="true"><span /><span /><span /></span>;
 }
 
-export function Select({ children, ...props }) {
-  return <span className="select-field"><select {...props}>{children}</select><ChevronDown size={13} /></span>;
-}
-
-export function Color({ value, onChange }) {
-  return <span className="color-field"><input type="color" value={value} onChange={(event) => onChange(event.target.value)} /><span aria-hidden="true">{value.toUpperCase()}</span></span>;
-}
-
-export function Seconds({ value, onChange, max }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
-  function commit() {
-    const valueAsNumber = Number(draft);
-    const next = draft !== '' && Number.isFinite(valueAsNumber) ? Math.max(0.1, Math.min(max, valueAsNumber)) : value;
-    setDraft(String(next));
-    onChange(next);
-  }
-  return <span className="unit-field"><input inputMode="decimal" type="number" min="0.1" max={max} step="0.1" value={draft}
-    onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><span>mp</span></span>;
-}
-
 function Card({ id, type, selected, children, input, output }) {
   const { deleteNode, nodes, edges } = useContext(GraphContext);
-  const target = edges.find((edge) => edge.target === id);
+  const target = edges.find((edge) => edge.target === id && !edge.targetHandle);
+  const backgroundTarget = type === 'render' && edges.some((edge) => edge.target === id && edge.targetHandle === backgroundPort);
   const source = edges.find((edge) => edge.source === id);
   const inputType = nodes.find((node) => node.id === target?.source)?.type;
   return <article className={`node-card node-${type}${selected ? ' is-selected' : ''}`} aria-label={label[type]}>
@@ -50,8 +33,9 @@ function Card({ id, type, selected, children, input, output }) {
     </header>
     <div className="port-row">
       {input ? <span className={`port port-in ${inputType === 'render' ? 'blue' : ''}`}><Handle type="target" position={Position.Left} className={target ? 'is-wired' : ''} />{input}</span> : <span />}
-      {output && <span className={`port port-out ${type === 'render' ? 'blue' : ''}`}>{output}<Handle type="source" position={Position.Right} className={source ? 'is-wired' : ''} /></span>}
+      {output && <span className={`port port-out${type === 'render' ? ' blue' : ''}${type === 'background' ? ' port-background' : ''}`}>{output}<Handle type="source" position={Position.Right} className={source ? 'is-wired' : ''} /></span>}
     </div>
+    {type === 'render' && <div className="port-row secondary-port"><span className="port port-in port-background"><Handle type="target" id={backgroundPort} position={Position.Left} className={backgroundTarget ? 'is-wired' : ''} />Háttér</span></div>}
     <div className="node-body nodrag nowheel">{children}</div>
   </article>;
 }
@@ -60,7 +44,8 @@ function TextNode({ id, data, selected }) {
   const { updateNode, nodes, edges } = useContext(GraphContext);
   const [previewOpen, setPreviewOpen] = useState(false);
   const set = (key, value) => updateNode(id, key, value);
-  const linkedRender = previewOpen && nodes.find((node) => node.id === edges.find((edge) => edge.source === id)?.target);
+  const linkedRender = previewOpen && outgoingRender(id, nodes, edges);
+  const linkedBackground = linkedRender && upstream(linkedRender.id, nodes, edges, backgroundPort)?.data;
   return <Card id={id} type="text" selected={selected} output="Szöveg">
     <label className="field">Tartalom<textarea rows={2} maxLength={360} value={data.text} placeholder="Írd be a szöveget…" onChange={(event) => set('text', event.target.value)} /></label>
     <div className="fields-two text-style-fields">
@@ -73,7 +58,15 @@ function TextNode({ id, data, selected }) {
     <button type="button" className="button text-preview-button" aria-haspopup="dialog" disabled={!data.text.trim()} onClick={() => setPreviewOpen(true)}>
       <Eye size={15} /> Előnézet
     </button>
-    {previewOpen && <TextPreviewDialog text={data} settings={linkedRender?.data ?? defaults.render} onClose={() => setPreviewOpen(false)} />}
+    {previewOpen && <TextPreviewDialog text={data} settings={linkedRender?.data ?? defaults.render} background={usableBackground(linkedBackground) ? linkedBackground : undefined} onClose={() => setPreviewOpen(false)} />}
+  </Card>;
+}
+
+function BackgroundNode({ id, data, selected }) {
+  const { nodes, edges, updateNode, updateImage } = useContext(GraphContext);
+  const settings = outgoingRender(id, nodes, edges)?.data ?? defaults.render;
+  return <Card id={id} type="background" selected={selected} output="Háttér">
+    <BackgroundFields data={data} settings={settings} set={(key, value) => updateNode(id, key, value)} onImage={(image) => updateImage(id, image)} />
   </Card>;
 }
 
@@ -107,28 +100,7 @@ function RenderNode({ id, data, selected }) {
 
 const stamp = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
-function Preview({ text, settings, time, size }) {
-  const canvas = useRef(null);
-  const draw = useRef(null);
-  const latestTime = useRef(time);
-  const resolution = resolutions[settings.resolution];
-  const width = Math.round(size * Math.min(1, resolution.width / resolution.height));
-  const height = Math.round(width * resolution.height / resolution.width);
-  useEffect(() => {
-    const update = () => {
-      draw.current = makeScene(canvas.current, text, settings);
-      draw.current(latestTime.current);
-    };
-    update();
-    let alive = true;
-    document.fonts.ready.then(() => { if (alive) update(); });
-    return () => { alive = false; };
-  }, [text, settings, width, height]);
-  useEffect(() => { latestTime.current = time; draw.current?.(time); }, [time]);
-  return <canvas ref={canvas} width={width} height={height} aria-label="Animáció előnézete" />;
-}
-
-function TextPreviewDialog({ text, settings, onClose }) {
+function TextPreviewDialog({ text, settings, background, onClose }) {
   const dialog = useRef(null);
   const title = useId();
   const [time, setTime] = useState(0);
@@ -157,7 +129,7 @@ function TextPreviewDialog({ text, settings, onClose }) {
       <h2 id={title}>Szöveg előnézete</h2>
       <button type="button" className="icon-button" aria-label="Előnézet bezárása" onClick={() => dialog.current.close()}><X size={17} /></button>
     </header>
-    <div className="text-preview-stage"><Preview text={text} settings={settings} time={time} size={960} /></div>
+    <div className="text-preview-stage"><Preview text={text} settings={settings} background={background} time={time} size={960} /></div>
     <progress className="text-preview-progress" aria-label="Animáció előrehaladása" max={text.seconds} value={time} />
     <footer>
       <span>{effects[text.effect]} · {text.seconds.toLocaleString('hu-HU')} mp</span>
@@ -170,6 +142,8 @@ function VideoNode({ id, data, selected, width }) {
   const { nodes, edges, outputs, download, updateNode, resizeVideo } = useContext(GraphContext);
   const render = upstream(id, nodes, edges);
   const text = render && upstream(render.id, nodes, edges);
+  const linkedBackground = render && upstream(render.id, nodes, edges, backgroundPort)?.data;
+  const background = usableBackground(linkedBackground) ? linkedBackground : undefined;
   const output = render && outputs[render.id];
   const settings = render?.data ?? defaults.render;
   const duration = output?.duration ?? settings.duration;
@@ -186,7 +160,7 @@ function VideoNode({ id, data, selected, width }) {
     setPlaying(false);
     setPosition(0);
     setShowPoster(!output);
-  }, [output, duration, text?.data]);
+  }, [output, duration, text?.data, background]);
 
   useEffect(() => {
     if (output || !playing) return;
@@ -221,12 +195,12 @@ function VideoNode({ id, data, selected, width }) {
     setPosition(value);
   }
 
-  const playable = Boolean(output || text);
+  const playable = Boolean(output || text || background);
   return <Card id={id} type="video" selected={selected} input="Videó">
     <div className="video-screen" ref={screen}>
       {output ? <video key={output.url} ref={video} src={output.url} playsInline loop={data.loop} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)} onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)} />
-        : text ? <Preview text={text.data} settings={settings} time={showPoster ? text.data.seconds : time} size={previewSize} /> : <div className="empty-screen"><Clapperboard size={23} /><span>Köss be egy renderkártyát</span></div>}
+        : playable ? <Preview text={text?.data} settings={settings} background={background} time={showPoster ? text?.data.seconds ?? 0 : time} size={previewSize} /> : <div className="empty-screen"><Clapperboard size={23} /><span>Köss be egy renderkártyát</span></div>}
       <span className="screen-label"><span />{output ? 'RENDERELT VIDEÓ' : 'ELŐNÉZET'}</span>
     </div>
     <input className="scrubber" type="range" min={0} max={duration} step={0.01} value={Math.min(time, duration)} disabled={!playable}
@@ -255,13 +229,13 @@ export function SignalEdge(props) {
   const { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, id, selected } = props;
   const [path, middleX, middleY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature: 0.33 });
   const { nodes } = useContext(GraphContext);
-  const blue = nodes.find((node) => node.id === props.source)?.type === 'render';
-  return <g className={`signal-edge ${blue ? 'signal-blue' : ''} ${selected ? 'signal-selected' : ''}`}>
+  const type = nodes.find((node) => node.id === props.source)?.type;
+  return <g className={`signal-edge ${type === 'render' ? 'signal-blue' : type === 'background' ? 'signal-background' : ''} ${selected ? 'signal-selected' : ''}`}>
     <path d={path} className="signal-halo" fill="none" />
     <BaseEdge id={id} path={path} interactionWidth={22} />
     <circle className="signal-light" cx={middleX} cy={middleY} r="2.3" />
   </g>;
 }
 
-export const nodeTypes = { text: TextNode, render: RenderNode, video: VideoNode };
+export const nodeTypes = { text: TextNode, background: BackgroundNode, render: RenderNode, video: VideoNode };
 export const edgeTypes = { signal: SignalEdge };

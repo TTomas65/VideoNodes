@@ -1,6 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { makeScene } from './scene';
 import { formats, resolutions } from './project';
+import { loadImage, movingBackground } from './background';
 
 const ffmpeg = new FFmpeg();
 
@@ -27,16 +28,19 @@ const capture = (canvas) => new Promise((resolve, reject) => {
   canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('A képkocka előállítása sikertelen.')), 'image/jpeg', 0.95);
 });
 
-export async function renderVideo(text, settings, report) {
-  await document.fonts.ready;
+export async function renderVideo(text, settings, report, background) {
+  const [image] = await Promise.all([
+    background?.mode === 'image' ? loadImage(background.image.src) : null,
+    document.fonts.ready,
+  ]);
   const { width, height } = resolutions[settings.resolution];
   const { container, mime } = formats[settings.format];
   const outputFile = `present-fflow.${settings.format}`;
   const canvas = document.createElement('canvas');
   Object.assign(canvas, { width, height });
-  const draw = makeScene(canvas, text, settings);
+  const draw = makeScene(canvas, text, settings, background, image);
   const frameCount = Math.ceil(settings.fps * settings.duration);
-  const animatedFrames = Math.min(frameCount, Math.ceil(settings.fps * text.seconds) + 1);
+  const animatedFrames = movingBackground(background) ? frameCount : Math.min(frameCount, Math.ceil(settings.fps * (text?.seconds ?? 0)) + 1);
   if (settings.format === 'webm') {
     const { encodeWebm } = await import('./webm');
     return encodeWebm({ canvas, draw, frameCount, animatedFrames, settings, report });

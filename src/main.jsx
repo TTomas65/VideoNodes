@@ -6,17 +6,22 @@ import '@fontsource-variable/inter';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
 import { descriptions, edgeTypes, GraphContext, NodeIcon, nodeTypes } from './nodes';
-import { canConnect, defaults, edgeType, effects, formats, getInitialProject, label, makeNode, readProject, resolutions, serialize, storageKey, upstream, videoSize } from './project';
+import { backgroundPort, canConnect, defaults, edgeType, effects, formats, imageDataSize, label, makeNode, readProject, resolutions, serialize, upstream, videoSize } from './project';
+import { maxProjectImageData, usableBackground } from './background';
+import { getInitialProject, saveProject } from './project-storage';
 
 const time = () => new Intl.DateTimeFormat('hu', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Budapest' }).format(new Date());
 const fileStem = (title) => title.trim().replace(/[^\p{L}\p{N} _-]+/gu, '-').replace(/\s+/g, '-') || 'present-fflow';
 const log = (message, kind = 'info', area = 'Projekt') => ({ id: crypto.randomUUID(), at: time(), message, kind, area });
 const nodeKinds = Object.keys(label);
-const graphProgress = (id, nodes, edges) => {
+const cardHeights = { text: 410, background: 335, render: 490, video: 309 };
+const sceneSignature = (id, nodes, edges) => {
   const render = nodes.find((node) => node.id === id && node.type === 'render');
   const text = upstream(id, nodes, edges);
-  return render && text ? JSON.stringify([render.data, text.id, text.data]) : '';
+  const background = upstream(id, nodes, edges, backgroundPort);
+  return render ? [render.data, text?.id, text?.data, background?.id, background?.data] : null;
 };
+const sameScene = (left, right) => left && right && left.every((value, index) => value === right[index]);
 
 function saveFile(url, filename) {
   const link = document.createElement('a');
@@ -29,8 +34,7 @@ function IconButton({ icon: Icon, title, size = 16, ...props }) {
   return <button type="button" className="icon-button" aria-label={title} title={title} {...props}><Icon size={size} /></button>;
 }
 
-function App() {
-  const [project] = useState(getInitialProject);
+function App({ project }) {
   const [nodes, setNodes, changeNodes] = useNodesState(project.nodes.map((node, index) => ({ ...node, selected: index === 0 })));
   const [edges, setEdges, changeEdges] = useEdgesState(project.edges);
   const [name, setName] = useState(project.name);
@@ -52,13 +56,14 @@ function App() {
   const importInput = useRef(null);
   const help = useRef(null);
   const busy = useRef(false);
+  const saving = useRef(false);
   const current = useRef({});
   current.current = { nodes, edges, name };
 
   const selected = nodes.find((node) => node.selected);
   const selectedEdge = edges.find((edge) => edge.selected);
   const result = Object.values(outputs).at(-1);
-  const availableRenderer = nodes.find((node) => node.type === 'render' && upstream(node.id, nodes, edges));
+  const availableRenderer = nodes.find((node) => node.type === 'render' && (upstream(node.id, nodes, edges) || upstream(node.id, nodes, edges, backgroundPort)));
   const renderFormat = formats[(selected?.type === 'render' ? selected.data.format : result?.format ?? availableRenderer?.data.format) ?? defaults.render.format];
   const searchResults = nodes.filter((node) => `${label[node.type]} ${node.data.text ?? ''}`.toLocaleLowerCase('hu').includes(query.toLocaleLowerCase('hu').trim()));
   const shownLogs = consoleTab === 'Renderelés' ? logs.filter((entry) => entry.area === 'FFmpeg') : logs;
@@ -71,22 +76,27 @@ function App() {
   }, [toast]);
 
   useEffect(() => {
-    const invalid = Object.entries(outputs).filter(([id, output]) => output.signature !== graphProgress(id, nodes, edges));
+    const invalid = Object.entries(outputs).filter(([id, output]) => !sameScene(output.signature, sceneSignature(id, nodes, edges)));
     if (invalid.length === 0) return;
     for (const [, output] of invalid) URL.revokeObjectURL(output.url);
     setOutputs((old) => Object.fromEntries(Object.entries(old).filter(([id]) => !invalid.some(([removed]) => removed === id))));
   }, [nodes, edges, outputs]);
 
-  const save = useCallback(() => {
+  const save = useCallback(async () => {
+    if (saving.current) return;
+    saving.current = true;
     const state = current.current;
     try {
-      localStorage.setItem(storageKey, JSON.stringify(serialize(state.name.trim() || project.name, state.nodes, state.edges, flow.getViewport())));
-      setDirty(false);
+      await saveProject(serialize(state.name.trim() || project.name, state.nodes, state.edges, flow.getViewport()));
+      const latest = current.current;
+      if (latest.name === state.name && latest.nodes === state.nodes && latest.edges === state.edges) setDirty(false);
       setToast('Projekt mentve ebben a böngészőben.');
       announce('A projekt mentése sikerült.', 'success');
     } catch {
       setToast('A helyi mentés sikertelen. Használd az exportálást.');
       announce('A böngésző nem engedélyezte a helyi mentést.', 'error');
+    } finally {
+      saving.current = false;
     }
   }, [announce, flow, project.name]);
 
@@ -101,9 +111,17 @@ function App() {
   }, [save]);
 
   function updateNode(id, key, value) {
-    if (current.current.nodes.find((node) => node.id === id)?.data[key] === value) return;
+    const existing = current.current.nodes.find((node) => node.id === id);
+    if (!existing || existing.data[key] === value) return;
     setNodes((old) => old.map((node) => node.id === id ? { ...node, data: { ...node.data, [key]: value } } : node));
     setDirty(true);
+  }
+
+  function updateImage(id, image) {
+    if (image && imageDataSize(current.current.nodes, id) + image.src.length > maxProjectImageData) {
+      throw new Error('A projekt háttérképei elérték a méretkorlátot. Távolíts el egy képet.');
+    }
+    updateNode(id, 'image', image);
   }
 
   function resizeVideo(id, width) {
@@ -129,12 +147,19 @@ function App() {
     const center = flow.screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
     const position = dropPosition ?? { x: Math.round(center.x - 122), y: Math.round(center.y - 80) };
     if (!dropPosition) {
-      while (nodes.some((node) => Math.abs(node.position.x - position.x) < 263 && Math.abs(node.position.y - position.y) < 370)) position.y += 118;
+      const gap = 32;
+      const width = type === 'video' ? videoSize.min : 246;
+      const nearby = nodes.filter((node) => position.x < node.position.x + (node.measured?.width ?? 246) + gap && position.x + width + gap > node.position.x)
+        .sort((a, b) => a.position.y - b.position.y);
+      for (const node of nearby) {
+        const bottom = node.position.y + (node.measured?.height ?? cardHeights[node.type]) + gap;
+        if (position.y < bottom && position.y + cardHeights[type] + gap > node.position.y) position.y = bottom;
+      }
     }
     const node = { ...makeNode(type, position), selected: true };
     setNodes((old) => [...old.map((item) => ({ ...item, selected: false })), node]);
     setEdges((old) => old.map((edge) => ({ ...edge, selected: false })));
-    if (!dropPosition) flow.setCenter(position.x + 123, position.y + 169, { zoom: Math.max(0.68, flow.getZoom()), duration: 320 });
+    if (!dropPosition) flow.setCenter(position.x + 123, position.y + cardHeights[type] / 2, { zoom: Math.max(0.68, flow.getZoom()), duration: 320 });
     setDirty(true);
     announce(`Kártya hozzáadva · ${label[type]}`);
   }
@@ -160,7 +185,7 @@ function App() {
     event.target.value = '';
     if (!file) return;
     try {
-      if (file.size > 1_000_000) throw new Error('A projektfájl túl nagy.');
+      if (file.size > maxProjectImageData + 1_000_000) throw new Error('A projektfájl túl nagy.');
       const next = readProject(JSON.parse(await file.text()));
       if (dirty && !window.confirm('A betöltés lecseréli a jelenlegi vásznat. Betöltöd a projektet?')) return;
       setNodes(next.nodes.map((node, index) => ({ ...node, selected: index === 0 })));
@@ -187,20 +212,23 @@ function App() {
     const state = current.current;
     const renderer = state.nodes.find((node) => node.id === id && node.type === 'render');
     const text = upstream(id, state.nodes, state.edges);
-    const problem = !renderer || !text ? 'Köss egy szövegkártyát az FFmpeg renderkártyához.'
-      : !text.data.text.trim() ? 'Adj meg egy szöveget a jelenethez.'
-      : text.data.seconds > renderer.data.duration ? 'Az animáció ideje hosszabb a videónál.' : '';
+    const background = upstream(id, state.nodes, state.edges, backgroundPort)?.data;
+    const textSettings = text?.data.text.trim() ? text.data : undefined;
+    const problem = !renderer || (!text && !background) ? 'Köss szöveg- vagy háttérkártyát az FFmpeg renderkártyához.'
+      : background && !usableBackground(background) ? 'Tölts fel egy képet a csatlakoztatott Háttér kártyára.'
+      : !textSettings && !background ? 'Adj meg egy szöveget a jelenethez.'
+      : textSettings?.seconds > renderer.data.duration ? 'A szöveg animációja hosszabb a videónál.' : '';
     if (problem) { announce(problem, 'error', 'FFmpeg'); setToast(problem); return; }
     busy.current = true;
-    const signature = graphProgress(id, state.nodes, state.edges);
+    const signature = sceneSignature(id, state.nodes, state.edges);
     const settings = renderer.data;
     const { container, codec } = formats[settings.format];
     setRendering({ id, progress: 2, phase: 'FFmpeg betöltése' });
     announce(`Renderelés elindult · ${container} / ${codec} · ${settings.resolution.replace('x', ' × ')} · ${settings.fps} fps · CRF ${settings.crf}`, 'info', 'FFmpeg');
     try {
       const { renderVideo } = await import('./render');
-      const blob = await renderVideo(text.data, settings, (progress, phase) => setRendering({ id, progress, phase }));
-      if (signature !== graphProgress(id, current.current.nodes, current.current.edges)) {
+      const blob = await renderVideo(textSettings, settings, (progress, phase) => setRendering({ id, progress, phase }), background);
+      if (!sameScene(signature, sceneSignature(id, current.current.nodes, current.current.edges))) {
         announce('A jelenet megváltozott a renderelés alatt. Indíts új renderelést.', 'info', 'FFmpeg');
         setToast('A jelenet megváltozott. Indíts új renderelést.');
         return;
@@ -263,7 +291,7 @@ function App() {
 
         <div className="flow-canvas" ref={canvas} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/present-fflow')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }}
           onDrop={(event) => { event.preventDefault(); addNode(event.dataTransfer.getData('application/present-fflow'), flow.screenToFlowPosition({ x: event.clientX, y: event.clientY })); }}>
-          <GraphContext.Provider value={{ nodes, edges, updateNode, resizeVideo, deleteNode, runRender, rendering, outputs, download }}>
+          <GraphContext.Provider value={{ nodes, edges, updateNode, updateImage, resizeVideo, deleteNode, runRender, rendering, outputs, download }}>
             <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} colorMode="dark"
               fitView={!project.viewport} fitViewOptions={{ padding: 0.12, maxZoom: 1 }} defaultViewport={project.viewport}
               minZoom={0.22} maxZoom={2} nodesDraggable edgesReconnectable={false} deleteKeyCode={['Backspace', 'Delete']}
@@ -331,10 +359,11 @@ function App() {
     <input hidden ref={importInput} type="file" accept=".json,application/json" onChange={importProject} />
     <dialog ref={help} className="help-dialog"><header><h2>A munkatér használata</h2><IconButton icon={X} title="Súgó bezárása" onClick={() => help.current.close()} /></header>
       <p>Adj kártyákat a vászonhoz, majd húzd a kimeneti csatlakozót a következő kártya bemenetére. A kártya fejlécével mozgathatod.</p>
-      <p>A videóhoz a jelenet útvonala Szöveg → FFmpeg render → Videólejátszó. Válassz MP4- vagy WebM-kimenetet, majd indítsd a renderelést. A lejátszó jobb alsó sarkát húzva átméretezheted a kártyát.</p>
+      <p>A Szöveg és a Háttér kártya az FFmpeg render külön bemenetére csatlakozik. Válassz MP4- vagy WebM-kimenetet, majd indítsd a renderelést. A lejátszó jobb alsó sarkát húzva átméretezheted a kártyát.</p>
       <dl><dt>Projekt mentése</dt><dd><kbd>Ctrl</kbd> + <kbd>S</kbd></dd><dt>Keresés</dt><dd><kbd>Ctrl</kbd> + <kbd>K</kbd></dd><dt>Kijelölés törlése</dt><dd><kbd>Delete</kbd></dd><dt>Nagyítás</dt><dd>Egérgörgő</dd></dl>
     </dialog>
   </div>;
 }
 
-createRoot(document.getElementById('root')).render(<ReactFlowProvider><App /></ReactFlowProvider>);
+const root = createRoot(document.getElementById('root'));
+getInitialProject().then((project) => root.render(<ReactFlowProvider><App project={project} /></ReactFlowProvider>));

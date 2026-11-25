@@ -1,3 +1,5 @@
+import { movingBackground, paintBackground } from './background';
+
 const segmenter = new Intl.Segmenter('hu', { granularity: 'grapheme' });
 const graphemes = (text) => Array.from(segmenter.segment(text), ({ segment }) => segment);
 const ease = (value) => 1 - (1 - value) ** 3;
@@ -31,17 +33,22 @@ function wrap(ctx, text, maxWidth) {
   return lines;
 }
 
-export function makeScene(canvas, text, settings) {
+export function makeScene(canvas, text, settings, background, image) {
   const { width, height } = canvas;
   const context = canvas.getContext('2d');
   const backdrop = document.createElement('canvas');
   backdrop.width = width;
   backdrop.height = height;
   const bg = backdrop.getContext('2d');
-  bg.fillStyle = settings.background;
-  bg.fillRect(0, 0, width, height);
+  const moving = movingBackground(background);
+  if (background) {
+    if (!moving) paintBackground(bg, width, height, background, image, 0);
+  } else {
+    bg.fillStyle = settings.background;
+    bg.fillRect(0, 0, width, height);
+  }
 
-  if (settings.style === 'ribbons') {
+  if (!background && settings.style === 'ribbons') {
     const gradient = bg.createRadialGradient(width * 0.87, height * 1.04, 0, width * 0.87, height * 1.04, Math.max(width, height) * 0.84);
     gradient.addColorStop(0, '#526d9dbb');
     gradient.addColorStop(0.38, '#3445758f');
@@ -58,6 +65,11 @@ export function makeScene(canvas, text, settings) {
       bg.stroke();
     }
   }
+
+  const drawBackground = moving
+    ? (time) => paintBackground(context, width, height, background, image, time)
+    : () => context.drawImage(backdrop, 0, 0);
+  if (!text || !text.text.trim()) return drawBackground;
 
   const family = text.font === 'Inter' ? '"Inter Variable", sans-serif' : `"${text.font}", sans-serif`;
   const font = (size) => `650 ${size}px ${family}`;
@@ -76,7 +88,7 @@ export function makeScene(canvas, text, settings) {
   return (time) => {
     const progress = Math.max(0, Math.min(1, time / text.seconds));
     const remaining = 1 - ease(progress);
-    context.drawImage(backdrop, 0, 0);
+    drawBackground(time);
     context.save();
     context.translate(width / 2, height / 2);
     switch (text.effect) {
