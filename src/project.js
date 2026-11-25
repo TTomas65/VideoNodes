@@ -80,7 +80,7 @@ export function serialize(name, nodes, edges, viewport) {
 
 export function readProject(value) {
   if (value?.version !== 1 || !Array.isArray(value.nodes) || !Array.isArray(value.edges) || value.nodes.length > 100) {
-    throw new Error('A fájl nem érvényes Present Fflow projekt.');
+    throw new Error('A fájl nem érvényes VideoNodes-projekt.');
   }
   const ids = new Set();
   const legacyLengths = new Map();

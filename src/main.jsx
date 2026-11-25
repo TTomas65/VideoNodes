@@ -5,6 +5,7 @@ import { Activity, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, Chevron
 import '@fontsource-variable/inter';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
+import brandIcon from '../ikons/ikon01.png';
 import { descriptions, edgeTypes, GraphContext, NodeIcon, nodeTypes } from './nodes';
 import { backgroundPort, canConnect, cardWidths, defaults, edgeType, effects, formats, imageDataSize, label, makeNode, maxCardWidth, readProject, resolutions, sceneInputs, scenePorts, serialize, upstream } from './project';
 import { maxProjectImageData, usableBackground } from './background';
@@ -274,7 +275,13 @@ function App({ project }) {
   const download = (output) => saveFile(output.url, output.name);
   return <div className="studio">
     <header className="topbar">
-      <div className="brand"><span className="brand-mark"><Layers3 size={21} strokeWidth={1.65} /></span><div><strong>Present Fflow</strong><span>Videóműhely</span></div></div>
+      <div className="brand">
+        <img className="brand-mark" src={brandIcon} width={38} height={38} alt="" />
+        <div>
+          <strong className="brand-name">VideoNodes</strong>
+          <div className="brand-details"><span>Videó prezentáció készítő műhely</span><b>Verzió: 0.15</b></div>
+        </div>
+      </div>
       <div className="header-search" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setSearching(false); }}>
         <Search size={16} /><input ref={searchInput} aria-label="Kártyák keresése" placeholder="Keresés a vásznon…" value={query} onFocus={() => setSearching(true)} onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => { if (event.key === 'Escape') searchInput.current.blur(); if (event.key === 'Enter' && searchResults[0]) selectNode(searchResults[0]); }} /><kbd>Ctrl K</kbd>
