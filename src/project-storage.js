@@ -1,4 +1,6 @@
-import { makeExample, readProject, storageKey } from './project';
+import { isLegacyExample, makeExample, readProject, storageKey } from './project';
+
+const previousStarterKey = `${storageKey}-previous-starter`;
 
 function accessSnapshot(mode, operate) {
   return new Promise((resolve, reject) => {
@@ -10,8 +12,8 @@ function accessSnapshot(mode, operate) {
       const db = opening.result;
       try {
         const transaction = db.transaction('projects', mode);
-        const request = operate(transaction.objectStore('projects'));
-        transaction.oncomplete = () => { db.close(); resolve(request.result); };
+        const readResult = operate(transaction.objectStore('projects'));
+        transaction.oncomplete = () => { db.close(); resolve(readResult?.()); };
         transaction.onabort = () => { db.close(); reject(transaction.error); };
       } catch (error) {
         db.close();
@@ -21,18 +23,43 @@ function accessSnapshot(mode, operate) {
   });
 }
 
-export function saveProject(snapshot) {
-  return accessSnapshot('readwrite', (store) => store.put(snapshot, storageKey));
+export function saveProject(snapshot, previousStarterSnapshot) {
+  return accessSnapshot('readwrite', (store) => {
+    if (previousStarterSnapshot) {
+      const backup = store.get(previousStarterKey);
+      backup.onsuccess = () => {
+        if (!readSnapshot(backup.result)) store.put(previousStarterSnapshot, previousStarterKey);
+      };
+    }
+    store.put(snapshot, storageKey);
+  });
+}
+
+function readSnapshot(snapshot) {
+  if (!snapshot) return null;
+  try { return readProject(snapshot); } catch { return null; }
+}
+
+function readLocalSnapshot() {
+  try { return JSON.parse(localStorage.getItem(storageKey)); } catch { return null; }
 }
 
 export async function getInitialProject() {
-  try {
-    const saved = await accessSnapshot('readonly', (store) => store.get(storageKey));
-    if (saved) return { ...readProject(saved), saved: true };
-  } catch { /* Check for an earlier browser save before opening the sample. */ }
-  try {
-    const legacy = localStorage.getItem(storageKey);
-    if (legacy) return { ...readProject(JSON.parse(legacy)), saved: true };
-  } catch { /* The sample also works when browser storage is disabled. */ }
-  return makeExample();
+  const [current, backup] = await accessSnapshot('readonly', (store) => {
+    const active = store.get(storageKey);
+    const previous = store.get(previousStarterKey);
+    return () => [active.result, previous.result];
+  }).catch(() => []);
+
+  let snapshot = current;
+  let saved = readSnapshot(snapshot);
+  if (!saved) {
+    snapshot = readLocalSnapshot();
+    saved = readSnapshot(snapshot);
+  }
+  const previousStarter = readSnapshot(backup);
+  if (!previousStarter && isLegacyExample(saved)) {
+    return { ...makeExample(), previousStarter: saved, previousStarterSnapshot: snapshot };
+  }
+  return { ...(saved ?? makeExample()), saved: Boolean(saved), previousStarter };
 }

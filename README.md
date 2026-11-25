@@ -15,7 +15,7 @@ A Vite kiírja a megnyitható helyi címet. A kiadási változatot az `npm run b
 
 ## Az első videó
 
-Első megnyitáskor a mintában a Szöveg kártya az első jelenethez, a Háttér kártya a renderelő Háttér bemenetéhez csatlakozik. Az elkészült videót a bekötött Videólejátszó mutatja. A minta és az újonnan hozzáadott renderkártyák MP4 (H.264), Full HD, 30 fps és 4 másodperces jelenethossz beállításokkal indulnak. Mentett projekt esetén a szerkesztő **Minta** gombjával nyithatod meg az indító elrendezést. A böngészőben tárolt projektet a **Mentés** gomb írja felül.
+Első megnyitáskor a mintában a Szöveg kártya az első jelenethez, a Háttér kártya a renderelő Háttér bemenetéhez csatlakozik. Az elkészült videót a bekötött Videólejátszó mutatja. A minta és az újonnan hozzáadott renderkártyák MP4 (H.264), Full HD, 30 fps és 4 másodperces jelenethossz beállításokkal indulnak. Mentett projekt esetén a szerkesztő **Minta** gombjával nyithatod meg az indító elrendezést. Ha a böngésző a korábbi háromkártyás indítómintát tárolja, megnyitáskor a friss mintát kapod. Az eredeti vásznat a **Régi mentés megnyitása** gombbal érheted el a bal oldali sávban, az új minta mentése után is.
 
 1. A mintaprojektben írd át a **Szöveg** kártya tartalmát. Válassz betűtípust, színt, animációt és időtartamot. Az **Előnézet** gomb felugró ablakban lejátssza az aktuális animációt.
 2. Az **FFmpeg render** kártyán állítsd be a formátumot, a felbontást (akár 3840 × 2160), a képkockasebességet és a jelenetek hosszát. A minőségi beállítások a **Gyors előnézet** (CRF 26), a **Kiegyensúlyozott** (CRF 20) és a **Stúdió minőség** (CRF 15).

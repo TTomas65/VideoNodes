@@ -65,6 +65,17 @@ export const makeExample = () => ({
   ],
 });
 
+export function isLegacyExample(project) {
+  if (project?.name !== exampleName || project.nodes.length !== 3 || project.edges.length !== 2) return false;
+  const cardAt = (type, x, y) => project.nodes.find((node) => node.id === `${type}-1` && node.type === type
+    && node.position.x === x && node.position.y === y);
+  const text = cardAt('text', 0, 0);
+  if (!text || !cardAt('render', 306, 51) || !cardAt('video', 612, 24)) return false;
+  return Object.entries(defaults.text).every(([key, value]) => text.data[key] === value)
+    && project.edges.some(({ source, target, targetHandle }) => source === 'text-1' && target === 'render-1' && targetHandle === scenePorts[0].id)
+    && project.edges.some(({ source, target, targetHandle }) => source === 'render-1' && target === 'video-1' && targetHandle == null);
+}
+
 export function canConnect({ source, target, targetHandle = null }, nodes, edges) {
   const from = nodes.find((node) => node.id === source);
   const to = nodes.find((node) => node.id === target);

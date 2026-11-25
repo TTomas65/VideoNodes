@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { addEdge, Background, MiniMap, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow } from '@xyflow/react';
-import { Activity, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, ChevronRight, CircleHelp, Command, FileVideo, Focus, Folder, Grid3X3, Layers3, LayoutGrid, LayoutTemplate, Minus, PanelLeft, PanelRight, Play, Plus, Save, Search, Settings2, Terminal, Trash2, X } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, ChevronRight, CircleHelp, Command, FileVideo, Focus, Folder, Grid3X3, History, Layers3, LayoutGrid, LayoutTemplate, Minus, PanelLeft, PanelRight, Play, Plus, Save, Search, Settings2, Terminal, Trash2, X } from 'lucide-react';
 import '@fontsource-variable/inter';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
@@ -49,7 +49,11 @@ function App({ project }) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [zoom, setZoom] = useState(project.viewport?.zoom ?? 1);
-  const [logs, setLogs] = useState(() => [log(project.saved ? 'A mentett projekt betöltve.' : 'A mintaprojekt megnyitva.'), log('A munkatér használatra kész.', 'success', 'Rendszer')]);
+  const [logs, setLogs] = useState(() => [
+    log(project.previousStarterSnapshot ? 'Az indítóminta frissült. A korábbi vászon a Régi mentés alatt érhető el.'
+      : project.saved ? 'A mentett projekt betöltve.' : 'A mintaprojekt megnyitva.'),
+    log('A munkatér használatra kész.', 'success', 'Rendszer'),
+  ]);
   const [rendering, setRendering] = useState(null);
   const [outputs, setOutputs] = useState({});
   const [toast, setToast] = useState('');
@@ -91,7 +95,7 @@ function App({ project }) {
     saving.current = true;
     const state = current.current;
     try {
-      await saveProject(serialize(state.name.trim() || project.name, state.nodes, state.edges, flow.getViewport()));
+      await saveProject(serialize(state.name.trim() || project.name, state.nodes, state.edges, flow.getViewport()), project.previousStarterSnapshot);
       const latest = current.current;
       if (latest.name === state.name && latest.nodes === state.nodes && latest.edges === state.edges) setDirty(false);
       setToast('Projekt mentve ebben a böngészőben.');
@@ -102,7 +106,7 @@ function App({ project }) {
     } finally {
       saving.current = false;
     }
-  }, [announce, flow, project.name]);
+  }, [announce, flow, project.name, project.previousStarterSnapshot]);
 
   useEffect(() => {
     function keydown(event) {
@@ -220,6 +224,13 @@ function App({ project }) {
     setToast('A mintaprojekt megnyitva.');
   }
 
+  function openPreviousStarter() {
+    if (dirty && !window.confirm('A régi mentés megnyitása lecseréli a vászon mentetlen módosításait. Megnyitod a régi mentést?')) return;
+    loadProject(project.previousStarter, { padding: 0.14, maxZoom: 1 });
+    announce('A frissítés előtti vászon megnyitva.', 'success');
+    setToast('A régi mentés megnyitva.');
+  }
+
   async function importProject(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -318,6 +329,7 @@ function App({ project }) {
           <NodeIcon type={type} /><span className="palette-text"><strong>{label[type]}</strong><small>{descriptions[type]}</small></span><Plus className="palette-plus" size={15} />
         </button>)}</div>
         <div className="sidebar-bottom">
+          {project.previousStarter && <button type="button" disabled={Boolean(rendering)} onClick={openPreviousStarter}><History size={16} /> Régi mentés megnyitása</button>}
           <button type="button" onClick={() => importInput.current.click()}><ArrowUpFromLine size={16} /> Projekt importálása</button>
           <button type="button" onClick={exportProject}><ArrowDownToLine size={16} /> Projekt exportálása</button>
           <button type="button" onClick={() => help.current.showModal()}><CircleHelp size={16} /> Súgó</button>
