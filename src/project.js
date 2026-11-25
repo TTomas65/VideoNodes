@@ -47,12 +47,23 @@ export const makeNode = (type, position, id = crypto.randomUUID()) => ({
   width: cardWidths[type],
 });
 
+const exampleText = makeNode('text', { x: 0, y: 0 }, 'text-1');
+const exampleBackground = makeNode('background', { x: 6, y: 478 }, 'background-1');
+const exampleRender = makeNode('render', { x: 387, y: 0 }, 'render-1');
+const exampleVideo = makeNode('video', { x: 900, y: -3 }, 'video-1');
+
 export const example = {
   name: 'Nyitó animáció',
-  nodes: [makeNode('text', { x: 0, y: 0 }, 'text-1'), makeNode('render', { x: 306, y: 51 }, 'render-1'), makeNode('video', { x: 612, y: 24 }, 'video-1')],
+  nodes: [
+    { ...exampleText, width: 296 },
+    { ...exampleBackground, width: 294 },
+    { ...exampleRender, width: 404, data: { ...exampleRender.data, sceneDurations: scenePorts.map(() => 4) } },
+    { ...exampleVideo, width: 572 },
+  ],
   edges: [
     { id: 'edge-1', source: 'text-1', target: 'render-1', targetHandle: scenePorts[0].id, type: edgeType },
     { id: 'edge-2', source: 'render-1', target: 'video-1', type: edgeType },
+    { id: 'edge-3', source: 'background-1', target: 'render-1', targetHandle: backgroundPort, type: edgeType },
   ],
 };
 
@@ -60,14 +71,31 @@ export function canConnect({ source, target, targetHandle = null }, nodes, edges
   const from = nodes.find((node) => node.id === source);
   const to = nodes.find((node) => node.id === target);
   if (!from || !to || edges.some((edge) => edge.target === target && (edge.targetHandle ?? null) === targetHandle)) return false;
-  if (targetHandle === backgroundPort) return from.type === 'background' && to.type === 'render';
+  if (targetHandle === backgroundPort) return from.type === 'background' && (to.type === 'render' || to.type === 'text');
   if (targetHandle === null) return from.type === 'render' && to.type === 'video';
   return from.type === 'text' && to.type === 'render' && scenePorts.some(({ id }) => id === targetHandle);
 }
 
 export const upstream = (target, nodes, edges, handle = null) => nodes.find((node) => node.id === edges.find((edge) => edge.target === target && (edge.targetHandle ?? null) === handle)?.source);
-export const sceneInputs = (target, nodes, edges) => scenePorts.map(({ id }) => upstream(target, nodes, edges, id));
-export const outgoingRender = (source, nodes, edges) => nodes.find((node) => node.id === edges.find((edge) => edge.source === source)?.target && node.type === 'render');
+const sceneInputs = (target, nodes, edges) => scenePorts.map(({ id }) => upstream(target, nodes, edges, id));
+export const linkedBackground = (target, nodes, edges) => upstream(target, nodes, edges, backgroundPort)?.data;
+
+export function renderSources(target, nodes, edges) {
+  return {
+    background: linkedBackground(target, nodes, edges),
+    inputs: sceneInputs(target, nodes, edges).map((node) => ({
+      text: node?.data,
+      background: node && linkedBackground(node.id, nodes, edges),
+    })),
+  };
+}
+
+export function outgoingRender(source, nodes, edges) {
+  const targets = edges.filter((edge) => edge.source === source).map((edge) => edge.target);
+  const renderers = nodes.filter((node) => node.type === 'render');
+  return renderers.find((node) => targets.includes(node.id))
+    ?? renderers.find((node) => edges.some((edge) => targets.includes(edge.source) && edge.target === node.id));
+}
 
 export const imageDataSize = (nodes, except) => nodes.reduce((size, node) => size + (node.type === 'background' && node.id !== except ? node.data.image?.src.length ?? 0 : 0), 0);
 

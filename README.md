@@ -15,6 +15,8 @@ A Vite kiírja a megnyitható helyi címet. A kiadási változatot az `npm run b
 
 ## Az első videó
 
+Friss megnyitáskor a mintában a Szöveg kártya az első jelenethez, a Háttér kártya a renderelő Háttér bemenetéhez csatlakozik. Az elkészült videót a bekötött Videólejátszó mutatja. A minta MP4 (H.264), Full HD, 30 fps és 4 másodperces jelenethossz beállításokkal indul.
+
 1. A mintaprojektben írd át a **Szöveg** kártya tartalmát. Válassz betűtípust, színt, animációt és időtartamot. Az **Előnézet** gomb felugró ablakban lejátssza az aktuális animációt.
 2. Az **FFmpeg render** kártyán állítsd be a formátumot, a felbontást (akár 3840 × 2160), a képkockasebességet és a jelenetek hosszát. A minőségi beállítások a **Gyors előnézet** (CRF 26), a **Kiegyensúlyozott** (CRF 20) és a **Stúdió minőség** (CRF 15).
 3. A **Videólejátszó** kártyán nézd meg az élő előnézetet. A **Renderelés** gomb után ugyanitt játszható le és tölthető le a kész videó. A jobb alsó sarkot húzva módosíthatod a kártya méretét, az **Ismétlés** gomb folyamatos lejátszást indít el, ha a videó már fut.
@@ -29,7 +31,7 @@ Az előnézet és a render sorszám szerint halad, az üres bemeneteket kihagyva
 
 ## Háttérkártya
 
-Add hozzá a **Háttér** kártyát a kártyatárból, és kösd az **FFmpeg render** kártya **Háttér** bemenetére. Szabad Háttér bemenetnél a videó háttere fekete. Ha csak háttér van csatlakoztatva, önálló videóként renderelhető, a **Jelenet 01** hosszával.
+Az **FFmpeg render** kártya **Háttér** bemenete a jelenetek közös hátterét adja. Ha egy **Szöveg** kártya bal oldali **Háttér** bemenetére is kötsz háttérkártyát, az adott jelenet ezt használja az előnézetben és a renderelt videóban. Az egyedi háttér animációja a jelenet elején indul. Ha a jelenethez egyik bemeneten sem kapcsolódik háttér, fekete lesz. A renderelőhöz kötött közös háttér szöveg nélkül is renderelhető, a **Jelenet 01** hosszával.
 
 - **Képfeltöltés.** Válassz böngészőben megnyitható képet legfeljebb 25 MB méretig. Alakítsd ki az illesztést, a képkivágást, a nagyítást, az átlátszatlanságot és a mögöttes alapszínt. A böngésző állóképpé alakítja a fájlt a mentéshez.
 - **Színátmenet és animáció.** Nyisd meg a **Háttér szerkesztése** ablakot. Válassz mintát, vagy állíts be legfeljebb öt színt, lineáris vagy radiális átmenetet, illetve fényfoltokat. A statikus mód mellett a forgatás, a sodródás és a pulzálás is beállítható. Az **Alkalmazás** átveszi az élő előnézet beállításait.

@@ -1,4 +1,4 @@
-import { movingBackground, paintBackground } from './background';
+import { movingBackground, paintBackground, usableBackground } from './background';
 import { sceneAt, sceneTime } from './timeline';
 
 const segmenter = new Intl.Segmenter('hu', { granularity: 'grapheme' });
@@ -37,7 +37,7 @@ function wrap(ctx, text, maxWidth) {
 function prepareBackdrop(canvas, background, image) {
   const { width, height } = canvas;
   const context = canvas.getContext('2d');
-  if (!background) return () => {
+  if (!usableBackground(background)) return () => {
     context.fillStyle = '#000';
     context.fillRect(0, 0, width, height);
   };
@@ -125,12 +125,19 @@ export function makeScene(canvas, text, background, image) {
   };
 }
 
-export function makeTimelineScene(canvas, timeline, background, image) {
-  const drawBackground = prepareBackdrop(canvas, background, image);
+export function makeTimelineScene(canvas, timeline, images) {
   const titles = timeline.scenes.map(({ text }) => text ? prepareText(canvas, text) : null);
+  let activeBackground;
+  let drawBackground;
   return (time) => {
-    drawBackground(time);
     const index = sceneAt(timeline, time);
-    if (titles[index]) titles[index](sceneTime(timeline.scenes[index], timeline.fps, time));
+    const scene = timeline.scenes[index];
+    if (!scene) return;
+    if (!drawBackground || activeBackground !== scene.background) {
+      activeBackground = scene.background;
+      drawBackground = prepareBackdrop(canvas, activeBackground, images.get(activeBackground?.image?.src));
+    }
+    drawBackground(Math.max(0, time - scene.backgroundStart / timeline.fps));
+    if (titles[index]) titles[index](sceneTime(scene, timeline.fps, time));
   };
 }

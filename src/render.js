@@ -1,7 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { makeTimelineScene } from './scene';
 import { formats, resolutions } from './project';
-import { loadImage, movingBackground } from './background';
+import { backgroundImageSources, loadImage, movingBackground } from './background';
 
 const ffmpeg = new FFmpeg();
 
@@ -28,9 +28,10 @@ const capture = (canvas) => new Promise((resolve, reject) => {
   canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('A képkocka előállítása sikertelen.')), 'image/jpeg', 0.95);
 });
 
-export async function renderVideo(timeline, settings, report, background) {
-  const [image] = await Promise.all([
-    background?.mode === 'image' ? loadImage(background.image.src) : null,
+export async function renderVideo(timeline, settings, report) {
+  const sources = backgroundImageSources(timeline.scenes.map(({ background }) => background));
+  const [imageEntries] = await Promise.all([
+    Promise.all(sources.map(async (src) => [src, await loadImage(src)])),
     document.fonts.ready,
   ]);
   const { width, height } = resolutions[settings.resolution];
@@ -38,17 +39,18 @@ export async function renderVideo(timeline, settings, report, background) {
   const outputFile = `present-fflow.${settings.format}`;
   const canvas = document.createElement('canvas');
   Object.assign(canvas, { width, height });
-  const draw = makeTimelineScene(canvas, timeline, background, image);
+  const draw = makeTimelineScene(canvas, timeline, new Map(imageEntries));
   const { frameCount } = timeline;
-  const moving = movingBackground(background);
-  const needsFrame = (index) => moving || timeline.scenes.some(({ start, end, animationEnd }) => start <= index && index < Math.min(end, animationEnd));
+  const frameRanges = timeline.scenes.map(({ start, end, animationEnd, background }) => ({
+    start, end: movingBackground(background) ? end : Math.min(end, animationEnd),
+  }));
+  const needsFrame = (index) => frameRanges.some(({ start, end }) => start <= index && index < end);
   if (settings.format === 'webm') {
     const { encodeWebm } = await import('./webm');
     return encodeWebm({ canvas, draw, frameCount, needsFrame, settings, report });
   }
   await loadEngine();
-  const last = timeline.scenes.at(-1);
-  const captureFrames = moving ? frameCount : Math.min(last.end, last.animationEnd);
+  const captureFrames = frameRanges.at(-1).end;
   const frames = [];
   const encoding = `${container} kódolása`;
   let inputMount;

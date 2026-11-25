@@ -7,7 +7,7 @@ import '@xyflow/react/dist/style.css';
 import './styles.css';
 import brandIcon from '../ikons/ikon01.png';
 import { descriptions, edgeTypes, GraphContext, NodeIcon, nodeTypes } from './nodes';
-import { backgroundPort, canConnect, cardWidths, defaults, edgeType, effects, formats, imageDataSize, label, makeNode, maxCardWidth, readProject, resolutions, sceneInputs, scenePorts, serialize, upstream } from './project';
+import { canConnect, cardWidths, defaults, edgeType, effects, formats, imageDataSize, label, makeNode, maxCardWidth, readProject, renderSources, resolutions, scenePorts, serialize } from './project';
 import { maxProjectImageData, usableBackground } from './background';
 import { getInitialProject, saveProject } from './project-storage';
 import { makeTimeline, renderSceneProgress } from './timeline';
@@ -19,10 +19,9 @@ const nodeKinds = Object.keys(label);
 const cardHeights = { text: 410, background: 335, render: 720, video: 309 };
 const sceneSignature = (id, nodes, edges) => {
   const render = nodes.find((node) => node.id === id && node.type === 'render');
-  const background = upstream(id, nodes, edges, backgroundPort);
   if (!render) return null;
-  const titles = sceneInputs(id, nodes, edges).flatMap((node) => [node?.id, node?.data]);
-  return [render.data, background?.id, background?.data, ...titles];
+  const { inputs, background } = renderSources(id, nodes, edges);
+  return [render.data, background, ...inputs.flatMap(({ text, background }) => [text, background])];
 };
 const sameScene = (left, right) => left && right && left.every((value, index) => value === right[index]);
 
@@ -67,7 +66,7 @@ function App({ project }) {
   const selectedEdge = edges.find((edge) => edge.selected);
   const result = Object.values(outputs).at(-1);
   const overallProgress = rendering?.progress ?? (result ? 100 : undefined);
-  const availableRenderer = nodes.find((node) => node.type === 'render' && (sceneInputs(node.id, nodes, edges).some(Boolean) || upstream(node.id, nodes, edges, backgroundPort)));
+  const availableRenderer = nodes.find((node) => node.type === 'render' && edges.some(({ target }) => target === node.id));
   const renderFormat = formats[(selected?.type === 'render' ? selected.data.format : result?.format ?? availableRenderer?.data.format) ?? defaults.render.format];
   const searchResults = nodes.filter((node) => `${label[node.type]} ${node.data.text ?? ''}`.toLocaleLowerCase('hu').includes(query.toLocaleLowerCase('hu').trim()));
   const shownLogs = consoleTab === 'Renderelés' ? logs.filter((entry) => entry.area === 'FFmpeg') : logs;
@@ -228,19 +227,18 @@ function App({ project }) {
     if (busy.current) return;
     const state = current.current;
     const renderer = state.nodes.find((node) => node.id === id && node.type === 'render');
-    const inputs = sceneInputs(id, state.nodes, state.edges);
-    const texts = inputs.map((node) => node?.data);
-    const hasText = texts.some((text) => text?.text.trim());
-    const empty = texts.findIndex((text) => text && !text.text.trim());
-    const background = upstream(id, state.nodes, state.edges, backgroundPort)?.data;
-    const problem = !renderer || (!inputs.some(Boolean) && !background) ? 'Köss szöveg- vagy háttérkártyát az FFmpeg renderkártyához.'
-      : background && !usableBackground(background) ? 'Tölts fel egy képet a csatlakoztatott Háttér kártyára.'
-      : empty !== -1 && (hasText || !background) ? `A ${scenePorts[empty].label} bemenetre kötött kártya szövege üres.` : '';
+    const settings = renderer?.data ?? defaults.render;
+    const { inputs, background } = renderSources(id, state.nodes, state.edges);
+    const timeline = makeTimeline(inputs, settings, background);
+    const empty = inputs.findIndex(({ text }) => text && !text.text.trim());
+    const missing = timeline.scenes.find(({ background }) => background && !usableBackground(background));
+    const problem = !renderer || (!timeline.scenes.length && empty === -1) ? 'Köss szöveg- vagy háttérkártyát az FFmpeg renderkártyához.'
+      : empty !== -1 && (timeline.scenes.some(({ text }) => text) || !background) ? `A ${scenePorts[empty].label} bemenetre kötött kártya szövege üres.`
+      : missing && inputs[missing.port].background ? `Tölts fel egy képet a ${scenePorts[missing.port].label} saját Háttér kártyájára.`
+      : missing ? 'Tölts fel egy képet a renderkártyához csatlakoztatott Háttér kártyára.' : '';
     if (problem) { announce(problem, 'error', 'FFmpeg'); setToast(problem); return; }
     busy.current = true;
     const signature = sceneSignature(id, state.nodes, state.edges);
-    const settings = renderer.data;
-    const timeline = makeTimeline(texts, settings, usableBackground(background));
     const { container, codec } = formats[settings.format];
     function report({ progress, phase, prepared = 0, encoded = 0 }) {
       setRendering({ id, progress, phase, scenes: renderSceneProgress(timeline, prepared, encoded) });
@@ -249,7 +247,7 @@ function App({ project }) {
     announce(`Renderelés elindult · ${container} / ${codec} · ${settings.resolution.replace('x', ' × ')} · ${settings.fps} fps · CRF ${settings.crf}`, 'info', 'FFmpeg');
     try {
       const { renderVideo } = await import('./render');
-      const blob = await renderVideo(timeline, settings, report, background);
+      const blob = await renderVideo(timeline, settings, report);
       if (!sameScene(signature, sceneSignature(id, current.current.nodes, current.current.edges))) {
         announce('A jelenet megváltozott a renderelés alatt. Indíts új renderelést.', 'info', 'FFmpeg');
         setToast('A jelenet megváltozott. Indíts új renderelést.');

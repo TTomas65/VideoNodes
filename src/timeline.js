@@ -4,20 +4,23 @@ const defaultSceneSeconds = 4;
 export const framesFor = (seconds, fps) => Math.max(1, Math.ceil(seconds * fps - 1e-8));
 export const durationFor = (settings, port, text) => settings.sceneDurations[port] ?? text?.seconds ?? defaultSceneSeconds;
 
-export function makeTimeline(texts, settings, backgroundOnly = false) {
+export function makeTimeline(inputs, settings, background) {
   const { fps } = settings;
   const scenes = [];
   let frameCount = 0;
 
-  function addScene(port, text) {
+  function addScene(port, text, sceneBackground) {
     const start = frameCount;
     frameCount += framesFor(durationFor(settings, port, text), fps);
     const animationEnd = start + (text ? framesFor(text.seconds, fps) : 1);
-    scenes.push({ port, text, start, end: frameCount, animationEnd });
+    scenes.push({ port, text, start, end: frameCount, animationEnd,
+      background: sceneBackground ?? background, backgroundStart: sceneBackground ? start : 0 });
   }
 
-  texts.forEach((text, port) => { if (text?.text.trim()) addScene(port, text); });
-  if (!scenes.length && backgroundOnly) addScene(0, null);
+  inputs.forEach(({ text, background: sceneBackground }, port) => {
+    if (text?.text.trim()) addScene(port, text, sceneBackground);
+  });
+  if (!scenes.length && background) addScene(0, null);
   return { scenes, fps, frameCount, duration: frameCount / fps };
 }
 

@@ -82,6 +82,8 @@ export async function prepareImage(file) {
 
 export const movingBackground = (background) => background?.mode === 'gradient' && background.gradient.motion !== 'still';
 export const usableBackground = (background) => background && (background.mode === 'gradient' || Boolean(background.image));
+export const backgroundImageSources = (backgrounds) => [...new Set(backgrounds.flatMap((background) =>
+  background?.mode === 'image' && background.image ? [background.image.src] : []))];
 
 export function paintBackground(ctx, width, height, background, image, time) {
   if (background.mode === 'image') {

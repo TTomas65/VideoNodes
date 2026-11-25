@@ -2,8 +2,7 @@ import { createContext, useContext, useEffect, useId, useMemo, useRef, useState 
 import { createPortal } from 'react-dom';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
 import { Blend, Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Trash2, Type, X } from 'lucide-react';
-import { backgroundPort, cardWidths, defaults, effects, fonts, formats, label, maxCardWidth, outgoingRender, qualities, resolutions, sceneInputs, scenePorts, upstream } from './project';
-import { usableBackground } from './background';
+import { backgroundPort, cardWidths, defaults, effects, fonts, formats, label, linkedBackground, maxCardWidth, outgoingRender, qualities, renderSources, resolutions, scenePorts, upstream } from './project';
 import { BackgroundFields } from './background-node';
 import { Color, Seconds, Select } from './fields';
 import { Preview } from './preview';
@@ -27,7 +26,10 @@ function Card({ id, type, selected, children, input, output, sceneControls }) {
   const incoming = new Set(edges.filter((edge) => edge.target === id).map((edge) => edge.targetHandle ?? null));
   const outgoing = edges.some((edge) => edge.source === id);
   const isRender = type === 'render';
-  const inputs = isRender ? scenePorts : [{ id: null, label: input }];
+  const inputs = isRender ? scenePorts : type === 'text' ? [{ id: backgroundPort, label: 'Háttér' }] : [{ id: null, label: input }];
+  const inputPort = (handle, name) => <span className={`port port-in${type === 'video' ? ' blue' : ''}${handle === backgroundPort ? ' port-background' : ''}`}>
+    <Handle type="target" id={handle} position={Position.Left} className={incoming.has(handle) ? 'is-wired' : ''} />{name}
+  </span>;
   const outputPort = output && <span className={`port port-out${isRender ? ' blue' : ''}${type === 'background' ? ' port-background' : ''}`}>{output}<Handle type="source" position={Position.Right} className={outgoing ? 'is-wired' : ''} /></span>;
   const minWidth = cardWidths[type];
   const width = nodes.find((node) => node.id === id)?.width ?? minWidth;
@@ -36,10 +38,10 @@ function Card({ id, type, selected, children, input, output, sceneControls }) {
       <button type="button" className="icon-button node-close nodrag" title={`${label[type]} törlése`} aria-label={`${label[type]} törlése`} onClick={() => deleteNode(id)}><X size={15} /></button>
     </header>
     {inputs.map(({ id: handle, label: name }, index) => <div key={handle ?? 'main'} className={`port-row${isRender ? ' scene-port' : ''}`}>
-      {name ? <span className={`port port-in${type === 'video' ? ' blue' : ''}`}><Handle type="target" id={handle} position={Position.Left} className={incoming.has(handle) ? 'is-wired' : ''} />{name}</span> : <span />}
+      {name ? inputPort(handle, name) : <span />}
       {isRender ? sceneControls(index, name) : outputPort}
     </div>)}
-    {isRender && <div className="port-row secondary-port"><span className="port port-in port-background"><Handle type="target" id={backgroundPort} position={Position.Left} className={incoming.has(backgroundPort) ? 'is-wired' : ''} />Háttér</span>{outputPort}</div>}
+    {isRender && <div className="port-row secondary-port">{inputPort(backgroundPort, 'Háttér')}{outputPort}</div>}
     <div className="node-body nodrag nowheel">{children}</div>
     <NodeResizeControl className="card-resize nodrag" position="bottom-right" resizeDirection="horizontal" minWidth={minWidth} maxWidth={maxCardWidth} autoScale={false}>
       <button type="button" className="resize-grip" aria-label={type === 'video' ? 'Videókártya méretezése' : `${label[type]} kártya méretezése`}
@@ -58,8 +60,8 @@ function TextNode({ id, data, selected }) {
   const { updateNode, nodes, edges } = useContext(GraphContext);
   const [previewOpen, setPreviewOpen] = useState(false);
   const set = (key, value) => updateNode(id, key, value);
-  const linkedRender = previewOpen && outgoingRender(id, nodes, edges);
-  const linkedBackground = linkedRender && upstream(linkedRender.id, nodes, edges, backgroundPort)?.data;
+  const linkedRender = previewOpen ? outgoingRender(id, nodes, edges) : undefined;
+  const background = previewOpen ? linkedBackground(id, nodes, edges) ?? linkedBackground(linkedRender?.id, nodes, edges) : undefined;
   return <Card id={id} type="text" selected={selected} output="Szöveg">
     <label className="field">Tartalom<textarea rows={2} maxLength={360} value={data.text} placeholder="Írd be a szöveget…" onChange={(event) => set('text', event.target.value)} /></label>
     <div className="fields-two text-style-fields">
@@ -72,7 +74,7 @@ function TextNode({ id, data, selected }) {
     <button type="button" className="button text-preview-button" aria-haspopup="dialog" disabled={!data.text.trim()} onClick={() => setPreviewOpen(true)}>
       <Eye size={15} /> Előnézet
     </button>
-    {previewOpen && <TextPreviewDialog text={data} settings={linkedRender?.data ?? defaults.render} background={usableBackground(linkedBackground) ? linkedBackground : undefined} onClose={() => setPreviewOpen(false)} />}
+    {previewOpen && <TextPreviewDialog text={data} settings={linkedRender?.data ?? defaults.render} background={background} onClose={() => setPreviewOpen(false)} />}
   </Card>;
 }
 
@@ -88,9 +90,8 @@ function RenderNode({ id, data, selected }) {
   const { nodes, edges, updateNode, runRender, rendering, outputs } = useContext(GraphContext);
   const set = (key, value) => updateNode(id, key, value);
   const active = rendering?.id === id;
-  const texts = sceneInputs(id, nodes, edges).map((node) => node?.data);
-  const background = upstream(id, nodes, edges, backgroundPort)?.data;
-  const { scenes, duration } = makeTimeline(texts, data, usableBackground(background));
+  const { inputs, background } = renderSources(id, nodes, edges);
+  const { scenes, duration } = makeTimeline(inputs, data, background);
   const sceneProgress = active ? rendering.scenes : outputs[id]?.scenes;
 
   function setSceneDuration(index, value) {
@@ -102,7 +103,7 @@ function RenderNode({ id, data, selected }) {
 
   function sceneControls(index, name) {
     const progress = sceneProgress?.[index];
-    const placeholder = durationFor(data, index, texts[index]);
+    const placeholder = durationFor(data, index, inputs[index].text);
     return <>
       <div className="scene-timing nodrag nowheel">
         {sceneProgress && <span className="scene-percent" aria-hidden="true">{progress === undefined ? '–' : `${progress}%`}</span>}
@@ -177,13 +178,11 @@ function TextPreviewDialog({ text, settings, background, onClose }) {
 function VideoNode({ id, data, selected, width }) {
   const { nodes, edges, outputs, download, updateNode } = useContext(GraphContext);
   const render = upstream(id, nodes, edges);
-  const linkedBackground = render && upstream(render.id, nodes, edges, backgroundPort)?.data;
-  const background = usableBackground(linkedBackground) ? linkedBackground : undefined;
   const output = render && outputs[render.id];
   const settings = render?.data ?? defaults.render;
-  const texts = sceneInputs(render?.id, nodes, edges).map((node) => node?.data);
-  const hasBackground = Boolean(background);
-  const timeline = useMemo(() => makeTimeline(texts, settings, hasBackground), [settings, hasBackground, ...texts]);
+  const { inputs, background } = renderSources(render?.id, nodes, edges);
+  const timeline = useMemo(() => makeTimeline(inputs, settings, background),
+    [settings, background, ...inputs.flatMap(({ text, background }) => [text, background])]);
   const duration = output?.duration ?? timeline.duration;
   const firstScene = timeline.scenes[0];
   const posterTime = firstScene?.text ? (Math.min(firstScene.end, firstScene.animationEnd) - 1) / timeline.fps : 0;
@@ -200,7 +199,7 @@ function VideoNode({ id, data, selected, width }) {
     setPlaying(false);
     setPosition(0);
     setShowPoster(!output);
-  }, [output, timeline, background]);
+  }, [output, timeline]);
 
   useEffect(() => {
     if (output || !playing) return;
@@ -235,12 +234,12 @@ function VideoNode({ id, data, selected, width }) {
     setPosition(value);
   }
 
-  const playable = Boolean(output || timeline.scenes.length || background);
+  const playable = Boolean(output || timeline.scenes.length);
   return <Card id={id} type="video" selected={selected} input="Videó">
     <div className="video-screen" ref={screen}>
       {output ? <video key={output.url} ref={video} src={output.url} playsInline loop={data.loop} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)} onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)} />
-        : playable ? <Preview timeline={timeline} settings={settings} background={background} time={showPoster ? posterTime : time} size={previewSize} /> : <div className="empty-screen"><Clapperboard size={23} /><span>Köss be egy renderkártyát</span></div>}
+        : playable ? <Preview timeline={timeline} settings={settings} time={showPoster ? posterTime : time} size={previewSize} /> : <div className="empty-screen"><Clapperboard size={23} /><span>Köss be egy renderkártyát</span></div>}
       <span className="screen-label"><span />{output ? 'RENDERELT VIDEÓ' : 'ELŐNÉZET'}</span>
     </div>
     <input className="scrubber" type="range" min={0} max={duration} step={0.01} value={Math.min(time, duration)} disabled={!playable}
