@@ -171,9 +171,8 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
 .empty-graph > span { font-size: 13px; color: var(--secondary); }
 
 .node-card {
-  --node-size: 246px;
   position: relative;
-  width: var(--node-size);
+  width: 100%;
   border: 1px solid #8d929c;
   border-bottom-color: #666d77;
   border-radius: 12px;
@@ -181,7 +180,6 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
   background: url('/grain.png'), linear-gradient(141deg, #34373d, #292c32 56%, #22252b);
   box-shadow: 0 1px 0 #121317, 0 8px 13px #090a0c99, 0 19px 23px #080a0e61, inset 0 1px 0 #ffffff44, inset 0 -1px 0 #ffffff12;
 }
-.node-video { width: 100%; }
 .node-card.is-selected { border-color: #bccadd; box-shadow: 0 0 0 2px #9cbae535, 0 0 20px #92b5f51a, 0 11px 24px #090a0ca8, 0 25px 25px #080a0e61; }
 .node-header {
   --reflection: 68%;
@@ -235,6 +233,9 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
 .node-icon.video { background: linear-gradient(135deg, #ecf2fc, #a0b1cc 52%, #8296b6 76%, #b9c8de); }
 .node-close { color: #e0e4ebad; width: 23px; height: 23px; }
 .port-row { height: 33px; display: flex; justify-content: space-between; align-items: center; padding: 0; background: #14161c35; border-bottom: 1px solid var(--line); }
+.scene-port { height: 22px; }
+.scene-port:nth-child(2) { height: 30px; }
+.scene-port .port-in { font-variant-numeric: tabular-nums; }
 .port { display: inline-flex; align-items: center; position: relative; height: 100%; color: #c6cbd4; font-size: 12px; }
 .port-in { padding-left: 13px; }
 .port-out { padding-right: 13px; }
@@ -299,7 +300,7 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
 .player-controls .icon-button { width: 23px; height: 23px; }
 .player-controls .player-play { color: #f7f9ff; background: #ffffff11; border-color: #ffffff15; }
 .player-controls .loop-button[aria-pressed='true'] { color: #dcf0ff; border-color: #a8c9ff65; background: #92b7ff33; }
-.node-video .video-resize { width: 21px; height: 21px; right: 1px; bottom: 1px; transform: none; border: 0; background: transparent; cursor: nwse-resize; z-index: 1; }
+.node-card .card-resize { width: 21px; height: 21px; right: 1px; bottom: 1px; transform: none; border: 0; background: transparent; cursor: nwse-resize; z-index: 1; }
 .resize-grip { width: 100%; height: 100%; display: block; position: relative; background: transparent; border: 0; padding: 0; border-radius: 0 0 8px; cursor: inherit; }
 .resize-grip::before { content: ''; position: absolute; inset: 5px 4px 4px 5px; clip-path: polygon(100% 0, 100% 100%, 0 100%); background: repeating-linear-gradient(135deg, transparent 0 2px, #b2b9c8 2px 3px, transparent 3px 4px); }
 .resize-grip:hover::before, .resize-grip:focus-visible::before { background: repeating-linear-gradient(135deg, transparent 0 2px, #e1ebfa 2px 3px, transparent 3px 4px); }
@@ -313,6 +314,12 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
 .signal-edge .react-flow__edge-path { stroke: var(--wire); stroke-width: 1.35px; }
 .signal-halo { stroke: var(--glow); stroke-width: 3.2px; filter: blur(2.5px); opacity: .68; }
 .signal-light { fill: #f7faff; filter: drop-shadow(0 0 3px var(--wire)) drop-shadow(0 0 5px var(--glow)); pointer-events: none; }
+.edge-controls { position: absolute; width: 20px; height: 20px; transform: translate(-50%, -50%); pointer-events: auto; }
+.edge-controls:has(.edge-delete) { z-index: 10; }
+.edge-point { display: block; width: 100%; height: 100%; border: 1px solid transparent; border-radius: 50%; padding: 0; background: transparent; }
+.edge-point:hover, .edge-point[aria-expanded='true'] { border-color: #c5d6ef70; background: #b6cdf22a; }
+.edge-delete { position: absolute; left: 50%; bottom: calc(100% + 3px); transform: translateX(-50%); display: flex; align-items: center; gap: 6px; border: 1px solid #8993a3; border-radius: 6px; padding: 6px 9px; white-space: nowrap; color: #f2d8d5; background: linear-gradient(#45444c, #292a30); box-shadow: 0 4px 14px #0008; font-size: 12px; }
+.edge-delete:hover { border-color: #dfaaa6; background: #513638; }
 
 .console { flex: none; height: 132px; min-height: 0; position: relative; display: flex; flex-direction: column; border-top: 1px solid #656c775e; background: #191b20; }
 .console.collapsed { height: 39px; }

@@ -22,7 +22,8 @@ export const qualities = [
   { crf: 20, label: 'Kiegyensúlyozott' },
   { crf: 15, label: 'Stúdió minőség' },
 ];
-export const videoSize = { min: 264, max: 920 };
+export const cardWidths = { text: 246, background: 246, render: 246, video: 264 };
+export const maxCardWidth = 920;
 
 export const defaults = {
   text: { text: 'A történet\nitt kezdődik.', font: 'Inter', color: '#f2f3fa', effect: 'slide', seconds: 1.2 },
@@ -35,17 +36,21 @@ export const label = { text: 'Szöveg', background: 'Háttér', render: 'FFmpeg 
 export const edgeType = 'signal';
 export const storageKey = 'present-fflow-v1';
 export const backgroundPort = 'background';
+export const scenePorts = Array.from({ length: 10 }, (_, index) => {
+  const number = String(index + 1).padStart(2, '0');
+  return { id: `scene-${number}`, label: `Jelenet ${number}` };
+});
 
 export const makeNode = (type, position, id = crypto.randomUUID()) => ({
   id, type, position, data: { ...defaults[type] }, dragHandle: '.node-header',
-  ...(type === 'video' && { width: videoSize.min }),
+  width: cardWidths[type],
 });
 
 export const example = {
   name: 'Nyitó animáció',
   nodes: [makeNode('text', { x: 0, y: 0 }, 'text-1'), makeNode('render', { x: 306, y: 51 }, 'render-1'), makeNode('video', { x: 612, y: 24 }, 'video-1')],
   edges: [
-    { id: 'edge-1', source: 'text-1', target: 'render-1', type: edgeType },
+    { id: 'edge-1', source: 'text-1', target: 'render-1', targetHandle: scenePorts[0].id, type: edgeType },
     { id: 'edge-2', source: 'render-1', target: 'video-1', type: edgeType },
   ],
 };
@@ -55,18 +60,19 @@ export function canConnect({ source, target, targetHandle = null }, nodes, edges
   const to = nodes.find((node) => node.id === target);
   if (!from || !to || edges.some((edge) => edge.target === target && (edge.targetHandle ?? null) === targetHandle)) return false;
   if (targetHandle === backgroundPort) return from.type === 'background' && to.type === 'render';
-  if (targetHandle !== null) return false;
-  return (from.type === 'text' && to.type === 'render') || (from.type === 'render' && to.type === 'video');
+  if (targetHandle === null) return from.type === 'render' && to.type === 'video';
+  return from.type === 'text' && to.type === 'render' && scenePorts.some(({ id }) => id === targetHandle);
 }
 
 export const upstream = (target, nodes, edges, handle = null) => nodes.find((node) => node.id === edges.find((edge) => edge.target === target && (edge.targetHandle ?? null) === handle)?.source);
+export const sceneInputs = (target, nodes, edges) => scenePorts.map(({ id }) => upstream(target, nodes, edges, id));
 export const outgoingRender = (source, nodes, edges) => nodes.find((node) => node.id === edges.find((edge) => edge.source === source)?.target && node.type === 'render');
 
 export const imageDataSize = (nodes, except) => nodes.reduce((size, node) => size + (node.type === 'background' && node.id !== except ? node.data.image?.src.length ?? 0 : 0), 0);
 
 export function serialize(name, nodes, edges, viewport) {
   return { version: 1, name, viewport, nodes: nodes.map(({ id, type, position, data, width }) => ({
-    id, type, position, data, ...(type === 'video' && { width }),
+    id, type, position, data, width,
   })),
     edges: edges.map(({ id, source, target, targetHandle }) => ({ id, source, target, ...(targetHandle && { targetHandle }) })) };
 }
@@ -84,6 +90,7 @@ export function readProject(value) {
     const node = makeNode(item.type, {
       x: range(item.position?.x, -50000, 50000, 0), y: range(item.position?.y, -50000, 50000, 0),
     }, item.id);
+    node.width = range(item.width, cardWidths[item.type], maxCardWidth, cardWidths[item.type]);
     const data = item.data ?? {};
     if (item.type === 'text') Object.assign(node.data, {
       text: typeof data.text === 'string' ? data.text.slice(0, 360) : defaults.text.text,
@@ -101,18 +108,19 @@ export function readProject(value) {
       format: Object.hasOwn(formats, data.format) ? data.format : defaults.render.format,
       crf: qualities.some(({ crf }) => crf === data.crf) ? data.crf : defaults.render.crf,
     });
-    if (item.type === 'video') {
-      node.width = range(item.width, videoSize.min, videoSize.max, videoSize.min);
-      node.data.loop = data.loop === true;
-    }
+    if (item.type === 'video') node.data.loop = data.loop === true;
     if (item.type === 'background') node.data = readBackground(data);
     return node;
   });
   if (imageDataSize(nodes) > maxProjectImageData) throw new Error('A projekt háttérképei túl nagyok.');
   const edges = [];
+  const nodeTypes = new Map(nodes.map(({ id, type }) => [id, type]));
   for (const item of value.edges) {
-    if (!item || !canConnect(item, nodes, edges)) throw new Error('A projekt érvénytelen összekötést tartalmaz.');
-    edges.push({ id: crypto.randomUUID(), source: item.source, target: item.target, targetHandle: item.targetHandle ?? null, type: edgeType });
+    if (!item) throw new Error('A projekt érvénytelen összekötést tartalmaz.');
+    const isLegacyScene = item.targetHandle == null && nodeTypes.get(item.source) === 'text' && nodeTypes.get(item.target) === 'render';
+    const connection = { source: item.source, target: item.target, targetHandle: isLegacyScene ? scenePorts[0].id : item.targetHandle ?? null };
+    if (!canConnect(connection, nodes, edges)) throw new Error('A projekt érvénytelen összekötést tartalmaz.');
+    edges.push({ ...connection, id: crypto.randomUUID(), type: edgeType });
   }
   const viewport = value.viewport ? {
     x: range(value.viewport.x, -150000, 150000, 0), y: range(value.viewport.y, -150000, 150000, 0),

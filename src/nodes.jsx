@@ -1,12 +1,13 @@
-import { createContext, useContext, useEffect, useId, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BaseEdge, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
-import { Blend, Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Type, X } from 'lucide-react';
-import { backgroundPort, defaults, effects, fonts, formats, label, outgoingRender, qualities, resolutions, upstream, videoSize } from './project';
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
+import { Blend, Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Trash2, Type, X } from 'lucide-react';
+import { backgroundPort, cardWidths, defaults, effects, fonts, formats, label, maxCardWidth, outgoingRender, qualities, resolutions, sceneInputs, scenePorts, upstream } from './project';
 import { usableBackground } from './background';
 import { BackgroundFields } from './background-node';
 import { Color, Seconds, Select } from './fields';
 import { Preview } from './preview';
+import { makeTimeline } from './timeline';
 
 export const GraphContext = createContext(null);
 export const typeIcons = { text: Type, background: Image, render: Cog, video: Clapperboard };
@@ -22,21 +23,32 @@ function ChromeIcon({ type }) {
 }
 
 function Card({ id, type, selected, children, input, output }) {
-  const { deleteNode, nodes, edges } = useContext(GraphContext);
-  const target = edges.find((edge) => edge.target === id && !edge.targetHandle);
-  const backgroundTarget = type === 'render' && edges.some((edge) => edge.target === id && edge.targetHandle === backgroundPort);
-  const source = edges.find((edge) => edge.source === id);
-  const inputType = nodes.find((node) => node.id === target?.source)?.type;
+  const { deleteNode, resizeNode, nodes, edges } = useContext(GraphContext);
+  const incoming = new Set(edges.filter((edge) => edge.target === id).map((edge) => edge.targetHandle ?? null));
+  const outgoing = edges.some((edge) => edge.source === id);
+  const inputs = type === 'render' ? scenePorts : [{ id: null, label: input }];
+  const minWidth = cardWidths[type];
+  const width = nodes.find((node) => node.id === id)?.width ?? minWidth;
   return <article className={`node-card node-${type}${selected ? ' is-selected' : ''}`} aria-label={label[type]}>
     <header className="node-header"><ChromeIcon type={type} /><strong>{label[type]}</strong>
       <button type="button" className="icon-button node-close nodrag" title={`${label[type]} törlése`} aria-label={`${label[type]} törlése`} onClick={() => deleteNode(id)}><X size={15} /></button>
     </header>
-    <div className="port-row">
-      {input ? <span className={`port port-in ${inputType === 'render' ? 'blue' : ''}`}><Handle type="target" position={Position.Left} className={target ? 'is-wired' : ''} />{input}</span> : <span />}
-      {output && <span className={`port port-out${type === 'render' ? ' blue' : ''}${type === 'background' ? ' port-background' : ''}`}>{output}<Handle type="source" position={Position.Right} className={source ? 'is-wired' : ''} /></span>}
-    </div>
-    {type === 'render' && <div className="port-row secondary-port"><span className="port port-in port-background"><Handle type="target" id={backgroundPort} position={Position.Left} className={backgroundTarget ? 'is-wired' : ''} />Háttér</span></div>}
+    {inputs.map(({ id: handle, label: name }, index) => <div key={handle ?? 'main'} className={`port-row${type === 'render' ? ' scene-port' : ''}`}>
+      {name ? <span className={`port port-in${type === 'video' ? ' blue' : ''}`}><Handle type="target" id={handle} position={Position.Left} className={incoming.has(handle) ? 'is-wired' : ''} />{name}</span> : <span />}
+      {index === 0 && output && <span className={`port port-out${type === 'render' ? ' blue' : ''}${type === 'background' ? ' port-background' : ''}`}>{output}<Handle type="source" position={Position.Right} className={outgoing ? 'is-wired' : ''} /></span>}
+    </div>)}
+    {type === 'render' && <div className="port-row secondary-port"><span className="port port-in port-background"><Handle type="target" id={backgroundPort} position={Position.Left} className={incoming.has(backgroundPort) ? 'is-wired' : ''} />Háttér</span></div>}
     <div className="node-body nodrag nowheel">{children}</div>
+    <NodeResizeControl className="card-resize nodrag" position="bottom-right" resizeDirection="horizontal" minWidth={minWidth} maxWidth={maxCardWidth} autoScale={false}>
+      <button type="button" className="resize-grip" aria-label={type === 'video' ? 'Videókártya méretezése' : `${label[type]} kártya méretezése`}
+        title="Húzd a kártya méretezéséhez, vagy használd a nyílbillentyűket" onKeyDown={(event) => {
+          const step = { ArrowLeft: -24, ArrowDown: -24, ArrowRight: 24, ArrowUp: 24 }[event.key];
+          if (!step && event.key !== 'Home' && event.key !== 'End') return;
+          event.preventDefault();
+          event.stopPropagation();
+          resizeNode(id, step ? width + step : event.key === 'Home' ? minWidth : maxCardWidth);
+        }} />
+    </NodeResizeControl>
   </article>;
 }
 
@@ -71,16 +83,18 @@ function BackgroundNode({ id, data, selected }) {
 }
 
 function RenderNode({ id, data, selected }) {
-  const { updateNode, runRender, rendering } = useContext(GraphContext);
+  const { nodes, edges, updateNode, runRender, rendering } = useContext(GraphContext);
   const set = (key, value) => updateNode(id, key, value);
   const active = rendering?.id === id;
-  return <Card id={id} type="render" selected={selected} input="Jelenet" output={formats[data.format].container}>
+  const texts = sceneInputs(id, nodes, edges).flatMap((node) => node?.data.text.trim() ? [node.data] : []);
+  const { duration } = makeTimeline(texts, data);
+  return <Card id={id} type="render" selected={selected} output={formats[data.format].container}>
     <label className="field">Felbontás<Select value={data.resolution} onChange={(event) => set('resolution', event.target.value)}>
       {Object.entries(resolutions).map(([key, { label: name, width, height }]) => <option value={key} key={key}>{width} × {height} · {name}</option>)}
     </Select></label>
     <div className="fields-two">
       <label className="field">Képkocka/mp<Select value={data.fps} onChange={(event) => set('fps', Number(event.target.value))}>{[24, 25, 30, 60].map((fps) => <option key={fps}>{fps}</option>)}</Select></label>
-      <label className="field">Videó hossza<Seconds value={data.duration} max={20} onChange={(value) => set('duration', value)} /></label>
+      <label className="field">Videó min. hossza<Seconds value={data.duration} max={20} onChange={(value) => set('duration', value)} /></label>
     </div>
     <div className="fields-two text-style-fields">
       <label className="field">Háttér<Select value={data.style} onChange={(event) => set('style', event.target.value)}><option value="ribbons">Fényívek</option><option value="solid">Egyszínű</option></Select></label>
@@ -92,6 +106,7 @@ function RenderNode({ id, data, selected }) {
     <label className="field">Renderelési minőség<Select aria-label="Renderelési minőség" value={data.crf} onChange={(event) => set('crf', Number(event.target.value))}>
       {qualities.map(({ crf, label: name }) => <option key={crf} value={crf}>{name} (CRF {crf})</option>)}
     </Select></label>
+    <div className="background-summary render-summary"><span>{texts.length} jelenet</span><span>{duration.toLocaleString('hu-HU', { maximumFractionDigits: 2 })} mp teljes hossz</span></div>
     <button type="button" className="render-button" disabled={Boolean(rendering)} onClick={() => runRender(id)}>
       <Play size={13} fill="currentColor" /> {active ? `${Math.round(rendering.progress)}% · Renderelés` : 'Renderelés indítása'}
     </button>
@@ -139,15 +154,17 @@ function TextPreviewDialog({ text, settings, background, onClose }) {
 }
 
 function VideoNode({ id, data, selected, width }) {
-  const { nodes, edges, outputs, download, updateNode, resizeVideo } = useContext(GraphContext);
+  const { nodes, edges, outputs, download, updateNode } = useContext(GraphContext);
   const render = upstream(id, nodes, edges);
-  const text = render && upstream(render.id, nodes, edges);
   const linkedBackground = render && upstream(render.id, nodes, edges, backgroundPort)?.data;
   const background = usableBackground(linkedBackground) ? linkedBackground : undefined;
   const output = render && outputs[render.id];
   const settings = render?.data ?? defaults.render;
-  const duration = output?.duration ?? settings.duration;
-  const previewSize = Math.max(480, Math.ceil((width ?? videoSize.min) / 128) * 128);
+  const texts = sceneInputs(render?.id, nodes, edges).map((node) => node?.data);
+  const timeline = useMemo(() => makeTimeline(texts.filter((text) => text?.text.trim()), settings), [settings, ...texts]);
+  const duration = output?.duration ?? timeline.duration;
+  const posterTime = ((timeline.scenes[0]?.end ?? 1) - 1) / timeline.fps;
+  const previewSize = Math.max(480, Math.ceil((width ?? cardWidths.video) / 128) * 128);
   const video = useRef(null);
   const screen = useRef(null);
   const [playing, setPlaying] = useState(false);
@@ -160,7 +177,7 @@ function VideoNode({ id, data, selected, width }) {
     setPlaying(false);
     setPosition(0);
     setShowPoster(!output);
-  }, [output, duration, text?.data, background]);
+  }, [output, timeline, background]);
 
   useEffect(() => {
     if (output || !playing) return;
@@ -195,12 +212,12 @@ function VideoNode({ id, data, selected, width }) {
     setPosition(value);
   }
 
-  const playable = Boolean(output || text || background);
+  const playable = Boolean(output || timeline.scenes.length || background);
   return <Card id={id} type="video" selected={selected} input="Videó">
     <div className="video-screen" ref={screen}>
       {output ? <video key={output.url} ref={video} src={output.url} playsInline loop={data.loop} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)} onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)} />
-        : playable ? <Preview text={text?.data} settings={settings} background={background} time={showPoster ? text?.data.seconds ?? 0 : time} size={previewSize} /> : <div className="empty-screen"><Clapperboard size={23} /><span>Köss be egy renderkártyát</span></div>}
+        : playable ? <Preview timeline={timeline} settings={settings} background={background} time={showPoster ? posterTime : time} size={previewSize} /> : <div className="empty-screen"><Clapperboard size={23} /><span>Köss be egy renderkártyát</span></div>}
       <span className="screen-label"><span />{output ? 'RENDERELT VIDEÓ' : 'ELŐNÉZET'}</span>
     </div>
     <input className="scrubber" type="range" min={0} max={duration} step={0.01} value={Math.min(time, duration)} disabled={!playable}
@@ -213,28 +230,23 @@ function VideoNode({ id, data, selected, width }) {
       <button className="icon-button" type="button" title="Teljes képernyő" aria-label="Teljes képernyő" disabled={!playable} onClick={() => screen.current.requestFullscreen?.().catch(() => {})}><Maximize size={13} /></button>
       {output && <button className="icon-button" type="button" title="Videó letöltése" aria-label="Videó letöltése" onClick={() => download(output)}><Download size={14} /></button>}
     </div>
-    <NodeResizeControl className="video-resize nodrag" position="bottom-right" resizeDirection="horizontal" minWidth={videoSize.min} maxWidth={videoSize.max} autoScale={false}>
-      <button type="button" className="resize-grip" aria-label="Videókártya méretezése" title="Húzd a kártya méretezéséhez, vagy használd a nyílbillentyűket" onKeyDown={(event) => {
-        const step = { ArrowLeft: -24, ArrowDown: -24, ArrowRight: 24, ArrowUp: 24 }[event.key];
-        if (!step && event.key !== 'Home' && event.key !== 'End') return;
-        event.preventDefault();
-        event.stopPropagation();
-        resizeVideo(id, step ? (width ?? videoSize.min) + step : event.key === 'Home' ? videoSize.min : videoSize.max);
-      }} />
-    </NodeResizeControl>
   </Card>;
 }
 
 export function SignalEdge(props) {
   const { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, id, selected } = props;
   const [path, middleX, middleY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, curvature: 0.33 });
-  const { nodes } = useContext(GraphContext);
+  const { nodes, selectEdge, deleteEdge } = useContext(GraphContext);
   const type = nodes.find((node) => node.id === props.source)?.type;
-  return <g className={`signal-edge ${type === 'render' ? 'signal-blue' : type === 'background' ? 'signal-background' : ''} ${selected ? 'signal-selected' : ''}`}>
+  return <><g className={`signal-edge ${type === 'render' ? 'signal-blue' : type === 'background' ? 'signal-background' : ''} ${selected ? 'signal-selected' : ''}`}>
     <path d={path} className="signal-halo" fill="none" />
     <BaseEdge id={id} path={path} interactionWidth={22} />
     <circle className="signal-light" cx={middleX} cy={middleY} r="2.3" />
-  </g>;
+  </g><EdgeLabelRenderer><div className="edge-controls nodrag nopan" style={{ left: middleX, top: middleY }}>
+    <button type="button" className="edge-point" aria-label="Kapcsolat műveletei" aria-expanded={selected} title="Kapcsolat műveletei"
+      onClick={(event) => { event.stopPropagation(); selectEdge(id); }} />
+    {selected && <button type="button" className="edge-delete" onClick={(event) => { event.stopPropagation(); deleteEdge(id); }}><Trash2 size={13} /> Törlés</button>}
+  </div></EdgeLabelRenderer></>;
 }
 
 export const nodeTypes = { text: TextNode, background: BackgroundNode, render: RenderNode, video: VideoNode };

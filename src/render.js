@@ -1,5 +1,5 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { makeScene } from './scene';
+import { makeTimelineScene } from './scene';
 import { formats, resolutions } from './project';
 import { loadImage, movingBackground } from './background';
 
@@ -28,7 +28,7 @@ const capture = (canvas) => new Promise((resolve, reject) => {
   canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('A képkocka előállítása sikertelen.')), 'image/jpeg', 0.95);
 });
 
-export async function renderVideo(text, settings, report, background) {
+export async function renderVideo(timeline, settings, report, background) {
   const [image] = await Promise.all([
     background?.mode === 'image' ? loadImage(background.image.src) : null,
     document.fonts.ready,
@@ -38,9 +38,9 @@ export async function renderVideo(text, settings, report, background) {
   const outputFile = `present-fflow.${settings.format}`;
   const canvas = document.createElement('canvas');
   Object.assign(canvas, { width, height });
-  const draw = makeScene(canvas, text, settings, background, image);
-  const frameCount = Math.ceil(settings.fps * settings.duration);
-  const animatedFrames = movingBackground(background) ? frameCount : Math.min(frameCount, Math.ceil(settings.fps * (text?.seconds ?? 0)) + 1);
+  const draw = makeTimelineScene(canvas, timeline, settings, background, image);
+  const { frameCount } = timeline;
+  const animatedFrames = movingBackground(background) ? frameCount : Math.max(1, timeline.contentFrames);
   if (settings.format === 'webm') {
     const { encodeWebm } = await import('./webm');
     return encodeWebm({ canvas, draw, frameCount, animatedFrames, settings, report });
@@ -50,7 +50,7 @@ export async function renderVideo(text, settings, report, background) {
   const encoding = `${container} kódolása`;
   let inputMount;
   let mounted = false;
-  const progress = ({ time }) => report(53 + Math.min(0.98, Math.max(0, time / (settings.duration * 1e6))) * 44, encoding);
+  const progress = ({ time }) => report(53 + Math.min(0.98, Math.max(0, time / (timeline.duration * 1e6))) * 44, encoding);
 
   try {
     for (let index = 0; index < animatedFrames; index += 1) {

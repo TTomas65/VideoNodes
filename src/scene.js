@@ -1,4 +1,5 @@
 import { movingBackground, paintBackground } from './background';
+import { sceneAt, sceneTime } from './timeline';
 
 const segmenter = new Intl.Segmenter('hu', { granularity: 'grapheme' });
 const graphemes = (text) => Array.from(segmenter.segment(text), ({ segment }) => segment);
@@ -33,16 +34,16 @@ function wrap(ctx, text, maxWidth) {
   return lines;
 }
 
-export function makeScene(canvas, text, settings, background, image) {
+function prepareBackdrop(canvas, settings, background, image) {
   const { width, height } = canvas;
   const context = canvas.getContext('2d');
+  if (movingBackground(background)) return (time) => paintBackground(context, width, height, background, image, time);
   const backdrop = document.createElement('canvas');
   backdrop.width = width;
   backdrop.height = height;
   const bg = backdrop.getContext('2d');
-  const moving = movingBackground(background);
   if (background) {
-    if (!moving) paintBackground(bg, width, height, background, image, 0);
+    paintBackground(bg, width, height, background, image, 0);
   } else {
     bg.fillStyle = settings.background;
     bg.fillRect(0, 0, width, height);
@@ -66,10 +67,12 @@ export function makeScene(canvas, text, settings, background, image) {
     }
   }
 
-  const drawBackground = moving
-    ? (time) => paintBackground(context, width, height, background, image, time)
-    : () => context.drawImage(backdrop, 0, 0);
-  if (!text || !text.text.trim()) return drawBackground;
+  return () => context.drawImage(backdrop, 0, 0);
+}
+
+function prepareText(canvas, text) {
+  const { width, height } = canvas;
+  const context = canvas.getContext('2d');
 
   const family = text.font === 'Inter' ? '"Inter Variable", sans-serif' : `"${text.font}", sans-serif`;
   const font = (size) => `650 ${size}px ${family}`;
@@ -88,7 +91,6 @@ export function makeScene(canvas, text, settings, background, image) {
   return (time) => {
     const progress = Math.max(0, Math.min(1, time / text.seconds));
     const remaining = 1 - ease(progress);
-    drawBackground(time);
     context.save();
     context.translate(width / 2, height / 2);
     switch (text.effect) {
@@ -130,5 +132,24 @@ export function makeScene(canvas, text, settings, background, image) {
       context.fillText(fragment, -context.measureText(line).width / 2, (index - (lines.length - 1) / 2) * lineHeight);
     });
     context.restore();
+  };
+}
+
+export function makeScene(canvas, text, settings, background, image) {
+  const drawBackground = prepareBackdrop(canvas, settings, background, image);
+  const drawText = text?.text.trim() ? prepareText(canvas, text) : null;
+  return (time) => {
+    drawBackground(time);
+    drawText?.(time);
+  };
+}
+
+export function makeTimelineScene(canvas, timeline, settings, background, image) {
+  const drawBackground = prepareBackdrop(canvas, settings, background, image);
+  const titles = timeline.scenes.map(({ text }) => prepareText(canvas, text));
+  return (time) => {
+    drawBackground(time);
+    const index = sceneAt(timeline, time);
+    if (index !== -1) titles[index](sceneTime(timeline.scenes[index], timeline.fps, time));
   };
 }

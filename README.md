@@ -19,7 +19,11 @@ A Vite kiírja a megnyitható helyi címet. A kiadási változatot az `npm run b
 2. Az **FFmpeg render** kártyán állítsd be a formátumot, a felbontást (akár 3840 × 2160), a képkockasebességet, a háttér megjelenését és a videó hosszát. A minőségi beállítások a **Gyors előnézet** (CRF 26), a **Kiegyensúlyozott** (CRF 20) és a **Stúdió minőség** (CRF 15). A videó hossza legalább akkora legyen, mint az animációé.
 3. A **Videólejátszó** kártyán nézd meg az élő előnézetet. A **Renderelés** gomb után ugyanitt játszható le és tölthető le a kész videó. A jobb alsó sarkot húzva módosíthatod a kártya méretét, az **Ismétlés** gomb folyamatos lejátszást indít el, ha a videó már fut.
 
-Kártyát kattintással vagy húzással adhatsz hozzá a kártyatárból. A kimeneti csatlakozót húzd a következő kártya bemenetére. Kijelölt kártyát vagy kapcsolatot a `Delete` billentyűvel törölhetsz.
+Kártyát kattintással vagy húzással adhatsz hozzá a kártyatárból. A jobb alsó sarok húzásával állíthatod a szélességét. A kimeneti csatlakozót húzd a következő kártya bemenetére. A vezeték fényes középső pontjára kattintva megjelenik a **Törlés** gomb. A `Delete` billentyű továbbra is törli a kijelölt kártyát vagy kapcsolatot.
+
+## Több jelenet egy videóban
+
+Kösd a Szöveg kártyákat az **FFmpeg render** kártya **Jelenet 01–10** bemeneteire. Az előnézet és a render a sorszámok sorrendjében halad, az üres bemeneteket kihagyja. Minden jelenetnek a saját animációs ideje szabja meg a hosszát. A **Videó min. hossza** beállítás szükség esetén meghosszabbítja az utolsó jelenetet. A korábbi projektek szöveges kapcsolata a **Jelenet 01** bemenetre kerül.
 
 ## Háttérkártya
 
@@ -30,7 +34,7 @@ Add hozzá a **Háttér** kártyát a kártyatárból, és kösd az **FFmpeg ren
 
 A feltöltött háttérképet a böngésző menti, és a JSON-export is tartalmazza. A kép megjelenik a szövegelőnézetben, a videólejátszóban és a kész MP4- vagy WebM-fájlban.
 
-A **Mentés** ebben a böngészőben tárolja a konfigurációt. Az elrendezés és a beállítások JSON-fájlba exportálhatók, majd ugyanonnan visszatölthetők. A videókat külön töltheted le. A böngésző a formátum első renderelésekor tölti be a kódolót. Az MP4 motorja körülbelül 32 MB, a WebM motorja körülbelül 4,5 MB. A videó felső időkorlátja 20 másodperc, az animációé 10 másodperc.
+A **Mentés** ebben a böngészőben tárolja a konfigurációt. Az elrendezés és a beállítások JSON-fájlba exportálhatók, majd ugyanonnan visszatölthetők. A videókat külön töltheted le. A böngésző a formátum első renderelésekor tölti be a kódolót. Az MP4 motorja körülbelül 32 MB, a WebM motorja körülbelül 4,5 MB. Egy szöveganimáció legfeljebb 10 másodpercig tarthat, a videó minimális hossza 20 másodpercig állítható.
 
 ## Könyvtárak
 

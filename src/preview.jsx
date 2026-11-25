@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadImage } from './background';
 import { resolutions } from './project';
-import { makeScene } from './scene';
+import { makeScene, makeTimelineScene } from './scene';
 
-export function Preview({ text, settings, background, time, size, label = 'Animáció előnézete' }) {
+export function Preview({ text, timeline, settings, background, time, size, label = 'Animáció előnézete' }) {
   const canvas = useRef(null);
   const draw = useRef(null);
   const latestTime = useRef(time);
@@ -23,15 +23,17 @@ export function Preview({ text, settings, background, time, size, label = 'Anim�
 
   useEffect(() => {
     const update = () => {
-      draw.current = makeScene(canvas.current, text, settings, background, image);
+      draw.current = timeline
+        ? makeTimelineScene(canvas.current, timeline, settings, background, image)
+        : makeScene(canvas.current, text, settings, background, image);
       draw.current(latestTime.current);
     };
     update();
-    if (!text) return;
+    if (!text && !timeline?.scenes.length) return;
     let alive = true;
     document.fonts.ready.then(() => { if (alive) update(); });
     return () => { alive = false; };
-  }, [text, settings, background, image, width, height]);
+  }, [text, timeline, settings, background, image, width, height]);
 
   useEffect(() => { latestTime.current = time; draw.current?.(time); }, [time]);
   return <canvas ref={canvas} width={width} height={height} aria-label={label} />;

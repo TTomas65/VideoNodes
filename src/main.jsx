@@ -6,20 +6,22 @@ import '@fontsource-variable/inter';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
 import { descriptions, edgeTypes, GraphContext, NodeIcon, nodeTypes } from './nodes';
-import { backgroundPort, canConnect, defaults, edgeType, effects, formats, imageDataSize, label, makeNode, readProject, resolutions, serialize, upstream, videoSize } from './project';
+import { backgroundPort, canConnect, cardWidths, defaults, edgeType, effects, formats, imageDataSize, label, makeNode, maxCardWidth, readProject, resolutions, sceneInputs, scenePorts, serialize, upstream } from './project';
 import { maxProjectImageData, usableBackground } from './background';
 import { getInitialProject, saveProject } from './project-storage';
+import { makeTimeline } from './timeline';
 
 const time = () => new Intl.DateTimeFormat('hu', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Budapest' }).format(new Date());
 const fileStem = (title) => title.trim().replace(/[^\p{L}\p{N} _-]+/gu, '-').replace(/\s+/g, '-') || 'present-fflow';
 const log = (message, kind = 'info', area = 'Projekt') => ({ id: crypto.randomUUID(), at: time(), message, kind, area });
 const nodeKinds = Object.keys(label);
-const cardHeights = { text: 410, background: 335, render: 490, video: 309 };
+const cardHeights = { text: 410, background: 335, render: 720, video: 309 };
 const sceneSignature = (id, nodes, edges) => {
   const render = nodes.find((node) => node.id === id && node.type === 'render');
-  const text = upstream(id, nodes, edges);
   const background = upstream(id, nodes, edges, backgroundPort);
-  return render ? [render.data, text?.id, text?.data, background?.id, background?.data] : null;
+  if (!render) return null;
+  const titles = sceneInputs(id, nodes, edges).flatMap((node) => [node?.id, node?.data]);
+  return [render.data, background?.id, background?.data, ...titles];
 };
 const sameScene = (left, right) => left && right && left.every((value, index) => value === right[index]);
 
@@ -63,7 +65,7 @@ function App({ project }) {
   const selected = nodes.find((node) => node.selected);
   const selectedEdge = edges.find((edge) => edge.selected);
   const result = Object.values(outputs).at(-1);
-  const availableRenderer = nodes.find((node) => node.type === 'render' && (upstream(node.id, nodes, edges) || upstream(node.id, nodes, edges, backgroundPort)));
+  const availableRenderer = nodes.find((node) => node.type === 'render' && (sceneInputs(node.id, nodes, edges).some(Boolean) || upstream(node.id, nodes, edges, backgroundPort)));
   const renderFormat = formats[(selected?.type === 'render' ? selected.data.format : result?.format ?? availableRenderer?.data.format) ?? defaults.render.format];
   const searchResults = nodes.filter((node) => `${label[node.type]} ${node.data.text ?? ''}`.toLocaleLowerCase('hu').includes(query.toLocaleLowerCase('hu').trim()));
   const shownLogs = consoleTab === 'Renderelés' ? logs.filter((entry) => entry.area === 'FFmpeg') : logs;
@@ -124,11 +126,24 @@ function App({ project }) {
     updateNode(id, 'image', image);
   }
 
-  function resizeVideo(id, width) {
-    const nextWidth = Math.min(videoSize.max, Math.max(videoSize.min, width));
-    if (current.current.nodes.find((node) => node.id === id)?.width === nextWidth) return;
+  function resizeNode(id, width) {
+    const existing = current.current.nodes.find((node) => node.id === id);
+    if (!existing) return;
+    const nextWidth = Math.min(maxCardWidth, Math.max(cardWidths[existing.type], width));
+    if (existing.width === nextWidth) return;
     setNodes((old) => old.map((node) => node.id === id ? { ...node, width: nextWidth } : node));
     setDirty(true);
+  }
+
+  function selectEdge(id) {
+    setNodes((old) => old.map((node) => node.selected ? { ...node, selected: false } : node));
+    setEdges((old) => old.map((edge) => Boolean(edge.selected) === (edge.id === id) ? edge : { ...edge, selected: edge.id === id }));
+  }
+
+  function deleteEdge(id) {
+    setEdges((old) => old.filter((edge) => edge.id !== id));
+    setDirty(true);
+    announce('Kapcsolat törölve.');
   }
 
   function deleteNode(id) {
@@ -148,8 +163,8 @@ function App({ project }) {
     const position = dropPosition ?? { x: Math.round(center.x - 122), y: Math.round(center.y - 80) };
     if (!dropPosition) {
       const gap = 32;
-      const width = type === 'video' ? videoSize.min : 246;
-      const nearby = nodes.filter((node) => position.x < node.position.x + (node.measured?.width ?? 246) + gap && position.x + width + gap > node.position.x)
+      const width = cardWidths[type];
+      const nearby = nodes.filter((node) => position.x < node.position.x + (node.measured?.width ?? node.width) + gap && position.x + width + gap > node.position.x)
         .sort((a, b) => a.position.y - b.position.y);
       for (const node of nearby) {
         const bottom = node.position.y + (node.measured?.height ?? cardHeights[node.type]) + gap;
@@ -159,7 +174,7 @@ function App({ project }) {
     const node = { ...makeNode(type, position), selected: true };
     setNodes((old) => [...old.map((item) => ({ ...item, selected: false })), node]);
     setEdges((old) => old.map((edge) => ({ ...edge, selected: false })));
-    if (!dropPosition) flow.setCenter(position.x + 123, position.y + cardHeights[type] / 2, { zoom: Math.max(0.68, flow.getZoom()), duration: 320 });
+    if (!dropPosition) flow.setCenter(position.x + cardWidths[type] / 2, position.y + cardHeights[type] / 2, { zoom: Math.max(0.68, flow.getZoom()), duration: 320 });
     setDirty(true);
     announce(`Kártya hozzáadva · ${label[type]}`);
   }
@@ -211,30 +226,31 @@ function App({ project }) {
     if (busy.current) return;
     const state = current.current;
     const renderer = state.nodes.find((node) => node.id === id && node.type === 'render');
-    const text = upstream(id, state.nodes, state.edges);
+    const inputs = sceneInputs(id, state.nodes, state.edges);
+    const texts = inputs.flatMap((node) => node?.data.text.trim() ? [node.data] : []);
+    const empty = inputs.findIndex((node) => node && !node.data.text.trim());
     const background = upstream(id, state.nodes, state.edges, backgroundPort)?.data;
-    const textSettings = text?.data.text.trim() ? text.data : undefined;
-    const problem = !renderer || (!text && !background) ? 'Köss szöveg- vagy háttérkártyát az FFmpeg renderkártyához.'
+    const problem = !renderer || (!inputs.some(Boolean) && !background) ? 'Köss szöveg- vagy háttérkártyát az FFmpeg renderkártyához.'
       : background && !usableBackground(background) ? 'Tölts fel egy képet a csatlakoztatott Háttér kártyára.'
-      : !textSettings && !background ? 'Adj meg egy szöveget a jelenethez.'
-      : textSettings?.seconds > renderer.data.duration ? 'A szöveg animációja hosszabb a videónál.' : '';
+      : empty !== -1 && (texts.length || !background) ? `A(z) ${scenePorts[empty].label} szövege üres.` : '';
     if (problem) { announce(problem, 'error', 'FFmpeg'); setToast(problem); return; }
     busy.current = true;
     const signature = sceneSignature(id, state.nodes, state.edges);
     const settings = renderer.data;
+    const timeline = makeTimeline(texts, settings);
     const { container, codec } = formats[settings.format];
     setRendering({ id, progress: 2, phase: 'FFmpeg betöltése' });
     announce(`Renderelés elindult · ${container} / ${codec} · ${settings.resolution.replace('x', ' × ')} · ${settings.fps} fps · CRF ${settings.crf}`, 'info', 'FFmpeg');
     try {
       const { renderVideo } = await import('./render');
-      const blob = await renderVideo(textSettings, settings, (progress, phase) => setRendering({ id, progress, phase }), background);
+      const blob = await renderVideo(timeline, settings, (progress, phase) => setRendering({ id, progress, phase }), background);
       if (!sameScene(signature, sceneSignature(id, current.current.nodes, current.current.edges))) {
         announce('A jelenet megváltozott a renderelés alatt. Indíts új renderelést.', 'info', 'FFmpeg');
         setToast('A jelenet megváltozott. Indíts új renderelést.');
         return;
       }
       const url = URL.createObjectURL(blob);
-      const output = { url, signature, format: settings.format, name: `${fileStem(state.name)}.${settings.format}`, duration: Math.ceil(settings.duration * settings.fps) / settings.fps };
+      const output = { url, signature, format: settings.format, name: `${fileStem(state.name)}.${settings.format}`, duration: timeline.duration };
       const previous = outputs[id];
       setOutputs((old) => ({ ...old, [id]: output }));
       if (previous) URL.revokeObjectURL(previous.url);
@@ -291,7 +307,7 @@ function App({ project }) {
 
         <div className="flow-canvas" ref={canvas} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/present-fflow')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }}
           onDrop={(event) => { event.preventDefault(); addNode(event.dataTransfer.getData('application/present-fflow'), flow.screenToFlowPosition({ x: event.clientX, y: event.clientY })); }}>
-          <GraphContext.Provider value={{ nodes, edges, updateNode, updateImage, resizeVideo, deleteNode, runRender, rendering, outputs, download }}>
+          <GraphContext.Provider value={{ nodes, edges, updateNode, updateImage, resizeNode, deleteNode, selectEdge, deleteEdge, runRender, rendering, outputs, download }}>
             <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} colorMode="dark"
               fitView={!project.viewport} fitViewOptions={{ padding: 0.12, maxZoom: 1 }} defaultViewport={project.viewport}
               minZoom={0.22} maxZoom={2} nodesDraggable edgesReconnectable={false} deleteKeyCode={['Backspace', 'Delete']}
@@ -342,7 +358,7 @@ function App({ project }) {
             {selected.type === 'text' && <div className="detail-row"><span>Animáció</span><span>{effects[selected.data.effect]}</span></div>}
             {selected.type === 'render' && <div className="detail-row"><span>Felbontás</span><span>{resolutions[selected.data.resolution].label}</span></div>}
             <button className="detail-delete" type="button" onClick={() => deleteNode(selected.id)}><Trash2 size={14} /> Kártya törlése</button></>
-            : selectedEdge ? <><div className="detail-row">Kijelölt kapcsolat</div><button className="detail-delete" type="button" onClick={() => { setEdges((old) => old.filter((edge) => edge.id !== selectedEdge.id)); setDirty(true); announce('Kapcsolat törölve.'); }}><Trash2 size={14} /> Kapcsolat törlése</button></>
+            : selectedEdge ? <><div className="detail-row">Kijelölt kapcsolat</div><button className="detail-delete" type="button" onClick={() => deleteEdge(selectedEdge.id)}><Trash2 size={14} /> Kapcsolat törlése</button></>
               : <p className="detail-empty">Jelölj ki egy kártyát vagy kapcsolatot a vásznon.</p>}
         </div></details>
         <details open><summary><FileVideo size={15} /> Renderelés <ChevronDown size={14} /></summary><div className="detail-body">
@@ -358,8 +374,8 @@ function App({ project }) {
     <footer className="statusbar"><span><span className={`status-dot ${rendering ? 'working' : ''}`} />{rendering ? rendering.phase : 'Munkatér kész'}</span><span><Activity size={13} /> FFmpeg <span className="status-sep" /> {dirty ? 'Nincs mentve' : <><Check size={13} /> Projekt mentve</>}</span></footer>
     <input hidden ref={importInput} type="file" accept=".json,application/json" onChange={importProject} />
     <dialog ref={help} className="help-dialog"><header><h2>A munkatér használata</h2><IconButton icon={X} title="Súgó bezárása" onClick={() => help.current.close()} /></header>
-      <p>Adj kártyákat a vászonhoz, majd húzd a kimeneti csatlakozót a következő kártya bemenetére. A kártya fejlécével mozgathatod.</p>
-      <p>A Szöveg és a Háttér kártya az FFmpeg render külön bemenetére csatlakozik. Válassz MP4- vagy WebM-kimenetet, majd indítsd a renderelést. A lejátszó jobb alsó sarkát húzva átméretezheted a kártyát.</p>
+      <p>A kártyát a fejlécével mozgathatod, a jobb alsó sarkát húzva méretezheted. A vezeték középső pontjára kattintva megjelenik a Törlés gomb.</p>
+      <p>A Szöveg kártyákat a Jelenet 01–10 bemenetekre kösd. A renderelő sorszám szerint halad, a szabad bemeneteket átugorja. A Háttér bemenet az egész videóhoz ad hátteret.</p>
       <dl><dt>Projekt mentése</dt><dd><kbd>Ctrl</kbd> + <kbd>S</kbd></dd><dt>Keresés</dt><dd><kbd>Ctrl</kbd> + <kbd>K</kbd></dd><dt>Kijelölés törlése</dt><dd><kbd>Delete</kbd></dd><dt>Nagyítás</dt><dd>Egérgörgő</dd></dl>
     </dialog>
   </div>;
