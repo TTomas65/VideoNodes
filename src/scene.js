@@ -1,5 +1,6 @@
 import { movingBackground, paintBackground, usableBackground } from './background';
 import { sceneAt, sceneTime } from './timeline';
+import { drawTransition } from './transitions';
 
 const segmenter = new Intl.Segmenter('hu', { granularity: 'grapheme' });
 const graphemes = (text) => Array.from(segmenter.segment(text), ({ segment }) => segment);
@@ -125,19 +126,44 @@ export function makeScene(canvas, text, background, image) {
   };
 }
 
-export function makeTimelineScene(canvas, timeline, images) {
+function makeTimelinePainter(canvas, timeline, images) {
   const titles = timeline.scenes.map(({ text }) => text ? prepareText(canvas, text) : null);
   let activeBackground;
   let drawBackground;
-  return (time) => {
-    const index = sceneAt(timeline, time);
+  return (index, time) => {
     const scene = timeline.scenes[index];
-    if (!scene) return;
     if (!drawBackground || activeBackground !== scene.background) {
       activeBackground = scene.background;
       drawBackground = prepareBackdrop(canvas, activeBackground, images.get(activeBackground?.image?.src));
     }
     drawBackground(Math.max(0, time - scene.backgroundStart / timeline.fps));
     if (titles[index]) titles[index](sceneTime(scene, timeline.fps, time));
+  };
+}
+
+export function makeTimelineScene(canvas, timeline, images) {
+  const draw = makeTimelinePainter(canvas, timeline, images);
+  const context = canvas.getContext('2d');
+  let layers;
+  return (time) => {
+    const index = sceneAt(timeline, time);
+    const scene = timeline.scenes[index];
+    if (!scene) return;
+    const frame = time * timeline.fps;
+    const transition = scene.transition;
+    if (!transition || frame + 1e-7 < transition.start) {
+      draw(index, time);
+      return;
+    }
+    layers ??= [index, index + 1].map(() => {
+      const layer = document.createElement('canvas');
+      Object.assign(layer, { width: canvas.width, height: canvas.height });
+      return { canvas: layer, draw: makeTimelinePainter(layer, timeline, images) };
+    });
+    const [outgoing, incoming] = layers;
+    outgoing.draw(index, time);
+    incoming.draw(index + 1, time);
+    drawTransition(context, transition.effect, outgoing.canvas, incoming.canvas,
+      (frame - transition.start) / (transition.end - transition.start));
   };
 }

@@ -10,19 +10,22 @@ import { descriptions, edgeTypes, GraphContext, NodeIcon, nodeTypes } from './no
 import { canConnect, cardWidths, defaults, edgeType, effects, formats, imageDataSize, label, makeExample, makeNode, maxCardWidth, minCardWidths, readProject, renderSources, resolutions, scenePorts, serialize } from './project';
 import { maxProjectImageData, usableBackground } from './background';
 import { getInitialProject, saveProject } from './project-storage';
+import { captureWorkspace } from './backups';
+import { BackupGallery } from './backup-gallery';
 import { makeTimeline, renderSceneProgress } from './timeline';
+import { transitionEffects } from './transitions';
 
 const time = () => new Intl.DateTimeFormat('hu', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Budapest' }).format(new Date());
 const fileStem = (title) => title.trim().replace(/[^\p{L}\p{N} _-]+/gu, '-').replace(/\s+/g, '-') || 'present-fflow';
 const log = (message, kind = 'info', area = 'Projekt') => ({ id: crypto.randomUUID(), at: time(), message, kind, area });
 const nodeKinds = Object.keys(label);
-const cardHeights = { text: 410, background: 335, render: 720, video: 500 };
+const cardHeights = { text: 410, background: 335, transition: 220, render: 720, video: 500 };
 const starterFit = { padding: { top: '8%', right: '5%', bottom: '4%', left: '4%' }, maxZoom: 1 };
 const sceneSignature = (id, nodes, edges) => {
   const render = nodes.find((node) => node.id === id && node.type === 'render');
   if (!render) return null;
   const { inputs, background } = renderSources(id, nodes, edges);
-  return [render.data, background, ...inputs.flatMap(({ text, background }) => [text, background])];
+  return [render.data, background, ...inputs.flatMap(({ text, background, transition }) => [text, background, transition])];
 };
 const sameScene = (left, right) => left && right && left.every((value, index) => value === right[index]);
 
@@ -57,6 +60,8 @@ function App({ project }) {
   const [rendering, setRendering] = useState(null);
   const [outputs, setOutputs] = useState({});
   const [toast, setToast] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const flow = useReactFlow();
   const canvas = useRef(null);
   const searchInput = useRef(null);
@@ -93,18 +98,30 @@ function App({ project }) {
   const save = useCallback(async () => {
     if (saving.current) return;
     saving.current = true;
+    setIsSaving(true);
     const state = current.current;
+    const viewport = flow.getViewport();
+    const snapshot = serialize(state.name.trim() || project.name, state.nodes, state.edges, viewport);
     try {
-      await saveProject(serialize(state.name.trim() || project.name, state.nodes, state.edges, flow.getViewport()), project.previousStarterSnapshot);
+      const preview = await captureWorkspace(canvas.current);
+      const view = flow.getViewport();
+      const captured = current.current;
+      if (captured.name !== state.name || captured.nodes !== state.nodes || captured.edges !== state.edges
+        || view.x !== viewport.x || view.y !== viewport.y || view.zoom !== viewport.zoom) {
+        throw new Error('A vászon megváltozott a képernyőkép készítése közben. Indítsd újra a mentést.');
+      }
+      const { onDisk, remembered } = await saveProject(snapshot, preview, project.previousStarterSnapshot);
       const latest = current.current;
       if (latest.name === state.name && latest.nodes === state.nodes && latest.edges === state.edges) setDirty(false);
-      setToast('Projekt mentve ebben a böngészőben.');
+      setToast(onDisk ? 'Projekt mentve a backups mappába.' : 'Projekt mentve ebben a böngészőben.');
       announce('A projekt mentése sikerült.', 'success');
-    } catch {
-      setToast('A helyi mentés sikertelen. Használd az exportálást.');
-      announce('A böngésző nem engedélyezte a helyi mentést.', 'error');
+      if (!remembered) announce('A mentés elérhető a projektválasztóban. A böngésző nem tudta eltárolni az indítóprojektet.', 'info');
+    } catch (error) {
+      setToast(error.message || 'A projekt mentése sikertelen.');
+      announce(`Mentési hiba · ${error.message || 'Ismeretlen hiba'}`, 'error');
     } finally {
       saving.current = false;
+      setIsSaving(false);
     }
   }, [announce, flow, project.name, project.previousStarterSnapshot]);
 
@@ -231,17 +248,21 @@ function App({ project }) {
     setToast('A régi mentés megnyitva.');
   }
 
+  function loadImportedProject(next, fitOptions = { padding: 0.14, maxZoom: 1 }) {
+    if (dirty && !window.confirm('A betöltés lecseréli a jelenlegi vásznat. Betöltöd a projektet?')) return false;
+    loadProject(next, fitOptions);
+    announce(`Projekt betöltve · ${next.name}`, 'success');
+    setToast('Projekt betöltve.');
+    return true;
+  }
+
   async function importProject(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
     try {
       if (file.size > maxProjectImageData + 1_000_000) throw new Error('A projektfájl túl nagy.');
-      const next = readProject(JSON.parse(await file.text()));
-      if (dirty && !window.confirm('A betöltés lecseréli a jelenlegi vásznat. Betöltöd a projektet?')) return;
-      loadProject(next, { padding: 0.14, maxZoom: 1 });
-      announce(`Projekt betöltve · ${next.name}`, 'success');
-      setToast('Projekt betöltve.');
+      loadImportedProject(readProject(JSON.parse(await file.text())));
     } catch (error) {
       const message = error instanceof SyntaxError ? 'A fájl nem olvasható JSON-ként.' : error.message;
       setToast(message);
@@ -256,9 +277,11 @@ function App({ project }) {
     const settings = renderer?.data ?? defaults.render;
     const { inputs, background } = renderSources(id, state.nodes, state.edges);
     const timeline = makeTimeline(inputs, settings, background);
+    const openInput = inputs.findIndex(({ text, transition }) => transition && !text);
     const empty = inputs.findIndex(({ text }) => text && !text.text.trim());
     const missing = timeline.scenes.find(({ background }) => background && !usableBackground(background));
-    const problem = !renderer || (!timeline.scenes.length && empty === -1) ? 'Köss szöveg- vagy háttérkártyát az FFmpeg renderkártyához.'
+    const problem = openInput !== -1 ? `Köss Szöveg kártyát a ${scenePorts[openInput].label} Átmenet kártyájához.`
+      : !renderer || (!timeline.scenes.length && empty === -1) ? 'Köss szöveg- vagy háttérkártyát az FFmpeg renderkártyához.'
       : empty !== -1 && (timeline.scenes.some(({ text }) => text) || !background) ? `A ${scenePorts[empty].label} bemenetre kötött kártya szövege üres.`
       : missing && inputs[missing.port].background ? `Tölts fel egy képet a ${scenePorts[missing.port].label} saját Háttér kártyájára.`
       : missing ? 'Tölts fel egy képet a renderkártyához csatlakoztatott Háttér kártyára.' : '';
@@ -313,7 +336,7 @@ function App({ project }) {
       </div>
       <div className="top-actions">
         <IconButton icon={Settings2} title="Tulajdonságok megjelenítése" aria-pressed={inspector} onClick={() => setInspector(!inspector)} />
-        <button type="button" className="button save-button" onClick={save}><Save size={15} /><span>Mentés</span></button>
+        <button type="button" className="button save-button" disabled={isSaving} aria-label="Mentés" onClick={save}><Save size={15} /><span>{isSaving ? 'Mentés…' : 'Mentés'}</span></button>
         <button type="button" className="button primary" disabled={Boolean(rendering)} onClick={() => runRender(selected?.type === 'render' ? selected.id : undefined)}>
           <Play size={14} fill="currentColor" /><span>{rendering ? `${Math.round(rendering.progress)}%` : 'Renderelés'}</span>
         </button>
@@ -330,7 +353,7 @@ function App({ project }) {
         </button>)}</div>
         <div className="sidebar-bottom">
           {project.previousStarter && <button type="button" disabled={Boolean(rendering)} onClick={openPreviousStarter}><History size={16} /> Régi mentés megnyitása</button>}
-          <button type="button" onClick={() => importInput.current.click()}><ArrowUpFromLine size={16} /> Projekt importálása</button>
+          <button type="button" onClick={() => setGalleryOpen(true)} aria-haspopup="dialog"><ArrowUpFromLine size={16} /> Projekt importálása</button>
           <button type="button" onClick={exportProject}><ArrowDownToLine size={16} /> Projekt exportálása</button>
           <button type="button" onClick={() => help.current.showModal()}><CircleHelp size={16} /> Súgó</button>
         </div>
@@ -396,6 +419,7 @@ function App({ project }) {
         <details open><summary><Layers3 size={15} /> Kijelölés <ChevronDown size={14} /></summary><div className="detail-body">
           {selected ? <><div className="selected-node"><NodeIcon type={selected.type} /><strong>{label[selected.type]}</strong></div>
             {selected.type === 'text' && <div className="detail-row"><span>Animáció</span><span>{effects[selected.data.effect]}</span></div>}
+            {selected.type === 'transition' && <div className="detail-row"><span>Váltási effekt</span><span>{transitionEffects[selected.data.effect]}</span></div>}
             {selected.type === 'render' && <div className="detail-row"><span>Felbontás</span><span>{resolutions[selected.data.resolution].label}</span></div>}
             <button className="detail-delete" type="button" onClick={() => deleteNode(selected.id)}><Trash2 size={14} /> Kártya törlése</button></>
             : selectedEdge ? <><div className="detail-row">Kijelölt kapcsolat</div><button className="detail-delete" type="button" onClick={() => deleteEdge(selectedEdge.id)}><Trash2 size={14} /> Kapcsolat törlése</button></>
@@ -413,6 +437,8 @@ function App({ project }) {
 
     <footer className="statusbar"><span><span className={`status-dot ${rendering ? 'working' : ''}`} />{rendering ? rendering.phase : 'Munkatér kész'}</span><span><Activity size={13} /> FFmpeg <span className="status-sep" /> {dirty ? 'Nincs mentve' : <><Check size={13} /> Projekt mentve</>}</span></footer>
     <input hidden ref={importInput} type="file" accept=".json,application/json" onChange={importProject} />
+    {galleryOpen && <BackupGallery onSelect={(next, entry) => loadImportedProject(next, entry.source === 'starter' ? starterFit : undefined)}
+      onImportFile={() => importInput.current.click()} onClose={() => setGalleryOpen(false)} />}
     <dialog ref={help} className="help-dialog"><header><h2>A munkatér használata</h2><IconButton icon={X} title="Súgó bezárása" onClick={() => help.current.close()} /></header>
       <p>A kártyát a fejlécével mozgathatod, a jobb alsó sarkát húzva méretezheted. A vezeték középső pontjára kattintva megjelenik a Törlés gomb.</p>
       <p>A Szöveg kártyákat a Jelenet 01–10 bemenetekre kösd, és az egyes sorokban add meg a jelenetek hosszát. A renderelő sorszám szerint halad. A Háttér bemenet az egész videóhoz ad hátteret. Szabad Háttér bemenetnél a videó háttere fekete.</p>

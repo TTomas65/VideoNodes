@@ -1,5 +1,7 @@
 import { defaultBackground, hexColor, maxProjectImageData, range, readBackground } from './background';
 import { defaultSceneSeconds, framesFor, maxSceneSeconds } from './timeline';
+import { maxTransitionSeconds, transitionEffects } from './transitions';
+import starter from '../backups/starter.json';
 
 export const effects = {
   slide: 'Beúsztatás', fog: 'Ködből előtűnés', bounce: 'Bepattogás',
@@ -23,11 +25,11 @@ export const qualities = [
   { crf: 20, label: 'Kiegyensúlyozott' },
   { crf: 15, label: 'Stúdió minőség' },
 ];
-export const cardWidths = { text: 296, background: 294, render: 404, video: 572 };
-export const minCardWidths = { text: 246, background: 246, render: 246, video: 264 };
+export const cardWidths = { text: 296, background: 294, transition: 280, render: 404, video: 572 };
+export const minCardWidths = { text: 246, background: 246, transition: 246, render: 246, video: 264 };
 export const maxCardWidth = 920;
 
-export const label = { text: 'Szöveg', background: 'Háttér', render: 'FFmpeg render', video: 'Videólejátszó' };
+export const label = { text: 'Szöveg', background: 'Háttér', transition: 'Átmenet', render: 'FFmpeg render', video: 'Videólejátszó' };
 export const edgeType = 'signal';
 export const storageKey = 'present-fflow-v1';
 export const backgroundPort = 'background';
@@ -41,6 +43,7 @@ export const defaults = {
   render: { resolution: '1920x1080', fps: 30, sceneDurations: scenePorts.map(() => defaultSceneSeconds), format: 'mp4', crf: 20 },
   video: { loop: false },
   background: defaultBackground,
+  transition: { effect: 'dissolve', seconds: 0.8 },
 };
 
 export const makeNode = (type, position, id = crypto.randomUUID()) => ({
@@ -48,25 +51,10 @@ export const makeNode = (type, position, id = crypto.randomUUID()) => ({
   width: cardWidths[type],
 });
 
-const exampleName = 'Nyitó animáció';
-
-export const makeExample = () => ({
-  name: exampleName,
-  nodes: [
-    makeNode('text', { x: 0, y: 0 }, 'text-1'),
-    makeNode('background', { x: 6, y: 478 }, 'background-1'),
-    makeNode('render', { x: 387, y: 0 }, 'render-1'),
-    makeNode('video', { x: 900, y: -3 }, 'video-1'),
-  ],
-  edges: [
-    { id: 'edge-1', source: 'text-1', target: 'render-1', targetHandle: scenePorts[0].id, type: edgeType },
-    { id: 'edge-2', source: 'render-1', target: 'video-1', type: edgeType },
-    { id: 'edge-3', source: 'background-1', target: 'render-1', targetHandle: backgroundPort, type: edgeType },
-  ],
-});
+export const makeExample = () => readProject(starter);
 
 export function isLegacyExample(project) {
-  if (project?.name !== exampleName || project.nodes.length !== 3 || project.edges.length !== 2) return false;
+  if (project?.name !== starter.name || project.nodes.length !== 3 || project.edges.length !== 2) return false;
   const cardAt = (type, x, y) => project.nodes.find((node) => node.id === `${type}-1` && node.type === type
     && node.position.x === x && node.position.y === y);
   const text = cardAt('text', 0, 0);
@@ -81,8 +69,8 @@ export function canConnect({ source, target, targetHandle = null }, nodes, edges
   const to = nodes.find((node) => node.id === target);
   if (!from || !to || edges.some((edge) => edge.target === target && (edge.targetHandle ?? null) === targetHandle)) return false;
   if (targetHandle === backgroundPort) return from.type === 'background' && (to.type === 'render' || to.type === 'text');
-  if (targetHandle === null) return from.type === 'render' && to.type === 'video';
-  return from.type === 'text' && to.type === 'render' && scenePorts.some(({ id }) => id === targetHandle);
+  if (targetHandle === null) return (from.type === 'render' && to.type === 'video') || (from.type === 'text' && to.type === 'transition');
+  return (from.type === 'text' || from.type === 'transition') && to.type === 'render' && scenePorts.some(({ id }) => id === targetHandle);
 }
 
 export const upstream = (target, nodes, edges, handle = null) => nodes.find((node) => node.id === edges.find((edge) => edge.target === target && (edge.targetHandle ?? null) === handle)?.source);
@@ -92,18 +80,26 @@ export const linkedBackground = (target, nodes, edges) => upstream(target, nodes
 export function renderSources(target, nodes, edges) {
   return {
     background: linkedBackground(target, nodes, edges),
-    inputs: sceneInputs(target, nodes, edges).map((node) => ({
-      text: node?.data,
-      background: node && linkedBackground(node.id, nodes, edges),
-    })),
+    inputs: sceneInputs(target, nodes, edges).map((node) => {
+      const transition = node?.type === 'transition' ? node.data : undefined;
+      const text = transition ? upstream(node.id, nodes, edges) : node;
+      return { text: text?.data, background: text && linkedBackground(text.id, nodes, edges), transition };
+    }),
   };
 }
 
 export function outgoingRender(source, nodes, edges) {
-  const targets = edges.filter((edge) => edge.source === source).map((edge) => edge.target);
-  const renderers = nodes.filter((node) => node.type === 'render');
-  return renderers.find((node) => targets.includes(node.id))
-    ?? renderers.find((node) => edges.some((edge) => targets.includes(edge.source) && edge.target === node.id));
+  const pending = [source];
+  const visited = new Set(pending);
+  for (const id of pending) {
+    for (const edge of edges) {
+      if (edge.source !== id || visited.has(edge.target)) continue;
+      const node = nodes.find((node) => node.id === edge.target);
+      if (node?.type === 'render') return node;
+      visited.add(edge.target);
+      pending.push(edge.target);
+    }
+  }
 }
 
 export const imageDataSize = (nodes, except) => nodes.reduce((size, node) => size + (node.type === 'background' && node.id !== except ? node.data.image?.src.length ?? 0 : 0), 0);
@@ -150,6 +146,10 @@ export function readProject(value) {
     }
     if (item.type === 'video') node.data.loop = data.loop === true;
     if (item.type === 'background') node.data = readBackground(data);
+    if (item.type === 'transition') Object.assign(node.data, {
+      effect: Object.hasOwn(transitionEffects, data.effect) ? data.effect : defaults.transition.effect,
+      seconds: range(data.seconds, 0.1, maxTransitionSeconds, defaults.transition.seconds),
+    });
     return node;
   });
   if (imageDataSize(nodes) > maxProjectImageData) throw new Error('A projekt háttérképei túl nagyok.');
@@ -166,7 +166,7 @@ export function readProject(value) {
     if (!legacyLengths.has(node.id)) continue;
     const { fps, sceneDurations } = node.data;
     const minimum = framesFor(legacyLengths.get(node.id), fps);
-    const lengths = sceneInputs(node.id, nodes, edges).map((source) => source?.data.text.trim() ? framesFor(source.data.seconds, fps) : 0);
+    const lengths = renderSources(node.id, nodes, edges).inputs.map(({ text }) => text?.text.trim() ? framesFor(text.seconds, fps) : 0);
     const last = lengths.findLastIndex(Boolean);
     const hold = minimum - lengths.reduce((sum, frames) => sum + frames, 0);
     if (last === -1) sceneDurations[0] = minimum / fps;
@@ -176,6 +176,6 @@ export function readProject(value) {
     x: range(value.viewport.x, -150000, 150000, 0), y: range(value.viewport.y, -150000, 150000, 0),
     zoom: range(value.viewport.zoom, 0.22, 2, 1),
   } : undefined;
-  return { name: typeof value.name === 'string' ? value.name.trim().slice(0, 64) || exampleName : exampleName, nodes, edges, viewport };
+  return { name: typeof value.name === 'string' ? value.name.trim().slice(0, 64) || starter.name : starter.name, nodes, edges, viewport };
 }
 

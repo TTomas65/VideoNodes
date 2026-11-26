@@ -8,17 +8,27 @@ export function makeTimeline(inputs, settings, background) {
   const { fps } = settings;
   const scenes = [];
   let frameCount = 0;
+  let pendingTransition;
+  let incomingFrames = 0;
 
-  function addScene(port, text, sceneBackground) {
-    const start = frameCount;
-    frameCount += framesFor(durationFor(settings, port, text), fps);
+  function addScene(port, text, sceneBackground, transition) {
+    const length = framesFor(durationFor(settings, port, text), fps);
+    const previous = scenes.at(-1);
+    // Reserve a frame outside the overlap so adjacent transitions never cover three scenes at once.
+    const overlap = pendingTransition ? Math.max(0, Math.min(framesFor(pendingTransition.seconds, fps),
+      previous.end - previous.start - incomingFrames - 1, length - 1)) : 0;
+    const start = frameCount - overlap;
+    if (overlap) previous.transition = { effect: pendingTransition.effect, start, end: frameCount };
+    frameCount = start + length;
     const animationEnd = start + (text ? framesFor(text.seconds, fps) : 1);
     scenes.push({ port, text, start, end: frameCount, animationEnd,
       background: sceneBackground ?? background, backgroundStart: sceneBackground ? start : 0 });
+    incomingFrames = overlap;
+    pendingTransition = transition;
   }
 
-  inputs.forEach(({ text, background: sceneBackground }, port) => {
-    if (text?.text.trim()) addScene(port, text, sceneBackground);
+  inputs.forEach(({ text, background: sceneBackground, transition }, port) => {
+    if (text?.text.trim()) addScene(port, text, sceneBackground, transition);
   });
   if (!scenes.length && background) addScene(0, null);
   return { scenes, fps, frameCount, duration: frameCount / fps };

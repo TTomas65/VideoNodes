@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "name": "Nyitó animáció",
+  "nodes": [
+    {
+      "id": "text-1",
+      "type": "text",
+      "position": { "x": 0, "y": 0 },
+      "width": 296,
+      "data": { "text": "A történet\nitt kezdődik.", "font": "Inter", "color": "#f2f3fa", "effect": "slide", "seconds": 1.2 }
+    },
+    {
+      "id": "background-1",
+      "type": "background",
+      "position": { "x": 6, "y": 478 },
+      "width": 294,
+      "data": {
+        "mode": "gradient",
+        "gradient": {
+          "shape": "linear",
+          "stops": [{ "color": "#211637", "at": 0 }, { "color": "#7a3d83", "at": 50 }, { "color": "#eeb1a6", "at": 100 }],
+          "angle": 31,
+          "scale": 100,
+          "motion": "still",
+          "period": 6,
+          "intensity": 65
+        },
+        "image": null,
+        "fit": "cover",
+        "x": 50,
+        "y": 50,
+        "zoom": 100,
+        "opacity": 100,
+        "matte": "#111520"
+      }
+    },
+    {
+      "id": "render-1",
+      "type": "render",
+      "position": { "x": 387, "y": 0 },
+      "width": 404,
+      "data": { "resolution": "1920x1080", "fps": 30, "sceneDurations": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4], "format": "mp4", "crf": 20 }
+    },
+    {
+      "id": "video-1",
+      "type": "video",
+      "position": { "x": 900, "y": -3 },
+      "width": 572,
+      "data": { "loop": false }
+    }
+  ],
+  "edges": [
+    { "id": "edge-1", "source": "text-1", "target": "render-1", "targetHandle": "scene-01" },
+    { "id": "edge-2", "source": "render-1", "target": "video-1" },
+    { "id": "edge-3", "source": "background-1", "target": "render-1", "targetHandle": "background" }
+  ]
+}

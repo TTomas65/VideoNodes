@@ -3,4 +3,5 @@ dist/
 public/ffmpeg/
 .local-preview/
 outputs/
+backups/saves/
 *.log

@@ -44,13 +44,16 @@ export async function renderVideo(timeline, settings, report) {
   const frameRanges = timeline.scenes.map(({ start, end, animationEnd, background }) => ({
     start, end: movingBackground(background) ? end : Math.min(end, animationEnd),
   }));
+  for (const { transition } of timeline.scenes) {
+    if (transition) frameRanges.push({ start: transition.start, end: transition.end + 1 });
+  }
   const needsFrame = (index) => frameRanges.some(({ start, end }) => start <= index && index < end);
   if (settings.format === 'webm') {
     const { encodeWebm } = await import('./webm');
     return encodeWebm({ canvas, draw, frameCount, needsFrame, settings, report });
   }
   await loadEngine();
-  const captureFrames = frameRanges.at(-1).end;
+  const captureFrames = Math.max(...frameRanges.map(({ end }) => end));
   const frames = [];
   const encoding = `${container} kódolása`;
   let inputMount;

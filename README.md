@@ -29,6 +29,8 @@ Kösd a Szöveg kártyákat az **FFmpeg render** kártya **Jelenet 01–10** bem
 
 Az előnézet és a render sorszám szerint halad, az üres bemeneteket kihagyva. A kék sávok jelenetenként követik az előrehaladást, az alsó jelző a teljes videót mutatja. A régi projektekben tárolt videóhossz a jelenetek hosszába kerül át. A korábbi szöveges kapcsolat a **Jelenet 01** bemenetre kerül.
 
+Az **Átmenet** kártyát a **Szöveg** kimenete és az adott jelenet renderbemenete közé kösd. Válassz például áttűnést, kipördülést, darabokra esést vagy lapozást, majd adj meg 0,1–5 másodpercet. Az effekt az adott jelenet végén indul, és a következő bekötött jelenetre vált. A két rész fedése rövidíti a teljes videót. A renderelő a rendelkezésre álló képkockákhoz igazítja a fedést. Az utolsó jelenet a saját hosszával ér véget.
+
 ## Háttérkártya
 
 Az **FFmpeg render** kártya **Háttér** bemenete a jelenetek közös hátterét adja. Ha egy **Szöveg** kártya bal oldali **Háttér** bemenetére is kötsz háttérkártyát, az adott jelenet ezt használja az előnézetben és a renderelt videóban. Az egyedi háttér animációja a jelenet elején indul. Ha a jelenethez egyik bemeneten sem kapcsolódik háttér, fekete lesz. A renderelőhöz kötött közös háttér szöveg nélkül is renderelhető, a **Jelenet 01** hosszával.
@@ -38,7 +40,9 @@ Az **FFmpeg render** kártya **Háttér** bemenete a jelenetek közös hátteré
 
 A feltöltött háttérképet a böngésző menti, és a JSON-export is tartalmazza. A kép megjelenik a szövegelőnézetben, a videólejátszóban és a kész MP4- vagy WebM-fájlban.
 
-A **Mentés** ebben a böngészőben tárolja a konfigurációt. Az elrendezés és a beállítások JSON-fájlba exportálhatók, majd ugyanonnan visszatölthetők. A videókat külön töltheted le. A böngésző a formátum első renderelésekor tölti be a kódolót. Az MP4 motorja körülbelül 32 MB, a WebM motorja körülbelül 4,5 MB. Egy szöveganimáció legfeljebb 10 másodpercig tarthat, a jelenethossz 0,1 és 20 másodperc között állítható.
+A **Mentés** új példányt készít az aktuális vászon képernyőképével. Helyi `npm run dev` vagy `npm run preview` futtatásnál a fájlok a `backups/saves` mappa egy-egy almappájába kerülnek. A **Projekt importálása** gomb megnyitja a név szerint kereshető képes galériát. Egy képre kattintva betölthető a mentés. A galériában a `backups/starter.json` kezdőprojekt és a külön **JSON-fájl megnyitása** gomb is elérhető. A hosztolt oldalon a képes mentések a böngészőben tárolódnak.
+
+Az elrendezés és a beállítások külön JSON-fájlba is exportálhatók. A videókat a lejátszóból töltheted le. A böngésző a formátum első renderelésekor tölti be a kódolót. Az MP4 motorja körülbelül 32 MB, a WebM motorja körülbelül 4,5 MB. Egy szöveganimáció legfeljebb 10 másodpercig tarthat, a jelenethossz 0,1 és 20 másodperc között állítható.
 
 ## Könyvtárak
 

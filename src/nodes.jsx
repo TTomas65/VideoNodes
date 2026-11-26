@@ -1,16 +1,17 @@
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
-import { Blend, Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Trash2, Type, X } from 'lucide-react';
+import { Blend, Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Shuffle, Trash2, Type, X } from 'lucide-react';
 import { backgroundPort, cardWidths, defaults, effects, fonts, formats, label, linkedBackground, maxCardWidth, minCardWidths, outgoingRender, qualities, renderSources, resolutions, scenePorts, upstream } from './project';
 import { BackgroundFields } from './background-node';
 import { Color, Seconds, Select } from './fields';
 import { Preview } from './preview';
 import { durationFor, makeTimeline, maxSceneSeconds } from './timeline';
+import { maxTransitionSeconds, transitionEffects } from './transitions';
 
 export const GraphContext = createContext(null);
-export const typeIcons = { text: Type, background: Image, render: Cog, video: Clapperboard };
-export const descriptions = { text: 'Címek és animációk', background: 'Kép és színátmenet', render: 'MP4 és WebM videó', video: 'Előnézet és lejátszás' };
+export const typeIcons = { text: Type, background: Image, transition: Shuffle, render: Cog, video: Clapperboard };
+export const descriptions = { text: 'Címek és animációk', background: 'Kép és színátmenet', transition: 'Jelenetváltási effektek', render: 'MP4 és WebM videó', video: 'Előnézet és lejátszás' };
 
 export function NodeIcon({ type }) {
   const Icon = typeIcons[type];
@@ -65,7 +66,7 @@ function TextNode({ id, data, selected }) {
   return <Card id={id} type="text" selected={selected} output="Szöveg">
     <label className="field">Tartalom<textarea rows={2} maxLength={360} value={data.text} placeholder="Írd be a szöveget…" onChange={(event) => set('text', event.target.value)} /></label>
     <div className="fields-two text-style-fields">
-      <label className="field">Betűtípus<Select value={data.font} onChange={(event) => set('font', event.target.value)}>{fonts.map((font) => <option key={font}>{font}</option>)}</Select></label>
+      <label className="field">Betűtípus<Select value={data.font} onChange={(event) => set('font', event.target.value)}>{fonts.map((font) => <option key={font} value={font}>{font}</option>)}</Select></label>
       <label className="field">Szín<Color value={data.color} onChange={(value) => set('color', value)} /></label>
     </div>
     <div className="field-divider" />
@@ -83,6 +84,17 @@ function BackgroundNode({ id, data, selected }) {
   const settings = outgoingRender(id, nodes, edges)?.data ?? defaults.render;
   return <Card id={id} type="background" selected={selected} output="Háttér">
     <BackgroundFields data={data} settings={settings} set={(key, value) => updateNode(id, key, value)} onImage={(image) => updateImage(id, image)} />
+  </Card>;
+}
+
+function TransitionNode({ id, data, selected }) {
+  const { updateNode } = useContext(GraphContext);
+  return <Card id={id} type="transition" selected={selected} input="Szöveg" output="Jelenet">
+    <label className="field">Váltási effekt<Select aria-label="Váltási effekt" value={data.effect} onChange={(event) => updateNode(id, 'effect', event.target.value)}>
+      {Object.entries(transitionEffects).map(([effect, name]) => <option key={effect} value={effect}>{name}</option>)}
+    </Select></label>
+    <label className="field field-inline">Átmenet időtartama<Seconds label="Átmenet időtartama" value={data.seconds} max={maxTransitionSeconds}
+      onChange={(value) => updateNode(id, 'seconds', value)} /></label>
   </Card>;
 }
 
@@ -121,7 +133,7 @@ function RenderNode({ id, data, selected }) {
     <label className="field">Felbontás<Select value={data.resolution} onChange={(event) => set('resolution', event.target.value)}>
       {Object.entries(resolutions).map(([key, { label: name, width, height }]) => <option value={key} key={key}>{width} × {height} · {name}</option>)}
     </Select></label>
-    <label className="field">Képkocka/mp<Select value={data.fps} onChange={(event) => set('fps', Number(event.target.value))}>{[24, 25, 30, 60].map((fps) => <option key={fps}>{fps}</option>)}</Select></label>
+    <label className="field">Képkocka/mp<Select value={data.fps} onChange={(event) => set('fps', Number(event.target.value))}>{[24, 25, 30, 60].map((fps) => <option key={fps} value={fps}>{fps}</option>)}</Select></label>
     <label className="field">Kimeneti formátum<Select aria-label="Kimeneti formátum" value={data.format} onChange={(event) => set('format', event.target.value)}>
       {Object.entries(formats).map(([key, { container, codec }]) => <option key={key} value={key}>{container} ({codec})</option>)}
     </Select></label>
@@ -182,10 +194,10 @@ function VideoNode({ id, data, selected, width }) {
   const settings = render?.data ?? defaults.render;
   const { inputs, background } = renderSources(render?.id, nodes, edges);
   const timeline = useMemo(() => makeTimeline(inputs, settings, background),
-    [settings, background, ...inputs.flatMap(({ text, background }) => [text, background])]);
+    [settings, background, ...inputs.flatMap(({ text, background, transition }) => [text, background, transition])]);
   const duration = output?.duration ?? timeline.duration;
   const firstScene = timeline.scenes[0];
-  const posterTime = firstScene?.text ? (Math.min(firstScene.end, firstScene.animationEnd) - 1) / timeline.fps : 0;
+  const posterTime = firstScene?.text ? (Math.min(firstScene.transition?.start ?? firstScene.end, firstScene.animationEnd) - 1) / timeline.fps : 0;
   const previewSize = Math.max(480, Math.ceil((width ?? cardWidths.video) / 128) * 128);
   const video = useRef(null);
   const screen = useRef(null);
@@ -271,5 +283,5 @@ export function SignalEdge(props) {
   </div></EdgeLabelRenderer></>;
 }
 
-export const nodeTypes = { text: TextNode, background: BackgroundNode, render: RenderNode, video: VideoNode };
+export const nodeTypes = { text: TextNode, background: BackgroundNode, transition: TransitionNode, render: RenderNode, video: VideoNode };
 export const edgeTypes = { signal: SignalEdge };
