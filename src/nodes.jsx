@@ -1,13 +1,15 @@
-import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createContext, lazy, Suspense, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
-import { Blend, Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Shuffle, Trash2, Type, X } from 'lucide-react';
+import { Blend, Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Settings2, Shuffle, Trash2, Type, X } from 'lucide-react';
 import { backgroundPort, cardWidths, defaults, effects, fonts, formats, label, linkedBackground, maxCardWidth, minCardWidths, outgoingRender, qualities, renderSources, resolutions, scenePorts, upstream } from './project';
 import { BackgroundFields } from './background-node';
 import { Color, Seconds, Select } from './fields';
 import { Preview } from './preview';
 import { durationFor, makeTimeline, maxSceneSeconds } from './timeline';
 import { maxTransitionSeconds, transitionEffects } from './transitions';
+
+const TransitionDialog = lazy(() => import('./transition-dialog'));
 
 export const GraphContext = createContext(null);
 export const typeIcons = { text: Type, background: Image, transition: Shuffle, render: Cog, video: Clapperboard };
@@ -88,13 +90,25 @@ function BackgroundNode({ id, data, selected }) {
 }
 
 function TransitionNode({ id, data, selected }) {
-  const { updateNode } = useContext(GraphContext);
+  const { updateNode, nodes, edges } = useContext(GraphContext);
+  const [dialog, setDialog] = useState(null);
+  const hasText = Boolean(upstream(id, nodes, edges)?.data.text?.trim());
   return <Card id={id} type="transition" selected={selected} input="Szöveg" output="Jelenet">
     <label className="field">Váltási effekt<Select aria-label="Váltási effekt" value={data.effect} onChange={(event) => updateNode(id, 'effect', event.target.value)}>
       {Object.entries(transitionEffects).map(([effect, name]) => <option key={effect} value={effect}>{name}</option>)}
     </Select></label>
     <label className="field field-inline">Átmenet időtartama<Seconds label="Átmenet időtartama" value={data.seconds} max={maxTransitionSeconds}
       onChange={(value) => updateNode(id, 'seconds', value)} /></label>
+    <div className="transition-node-actions">
+      <button type="button" className="button" aria-haspopup="dialog" disabled={!hasText} title={hasText ? undefined : 'Köss ide egy kitöltött Szöveg kártyát'}
+        onClick={() => setDialog('preview')}><Eye size={15} /> Előnézet</button>
+      <button type="button" className="button" aria-haspopup="dialog" onClick={() => setDialog('editor')}><Settings2 size={15} /> Átmenetek szerkesztése</button>
+    </div>
+    {dialog && <Suspense fallback={null}>
+      <TransitionDialog mode={dialog} id={id} data={data} nodes={nodes} edges={edges} onClose={() => setDialog(null)} onApply={(draft) => {
+        for (const key of ['effect', 'seconds', 'tuning']) updateNode(id, key, draft[key]);
+      }} />
+    </Suspense>}
   </Card>;
 }
 

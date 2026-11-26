@@ -1,6 +1,6 @@
 import { defaultBackground, hexColor, maxProjectImageData, range, readBackground } from './background';
 import { defaultSceneSeconds, framesFor, maxSceneSeconds } from './timeline';
-import { maxTransitionSeconds, transitionEffects } from './transitions';
+import { maxTransitionSeconds, readTransitionTuning, transitionEffects } from './transitions';
 import starter from '../backups/starter.json';
 
 export const effects = {
@@ -43,7 +43,7 @@ export const defaults = {
   render: { resolution: '1920x1080', fps: 30, sceneDurations: scenePorts.map(() => defaultSceneSeconds), format: 'mp4', crf: 20 },
   video: { loop: false },
   background: defaultBackground,
-  transition: { effect: 'dissolve', seconds: 0.8 },
+  transition: { effect: 'dissolve', seconds: 0.8, tuning: {} },
 };
 
 export const makeNode = (type, position, id = crypto.randomUUID()) => ({
@@ -149,6 +149,7 @@ export function readProject(value) {
     if (item.type === 'transition') Object.assign(node.data, {
       effect: Object.hasOwn(transitionEffects, data.effect) ? data.effect : defaults.transition.effect,
       seconds: range(data.seconds, 0.1, maxTransitionSeconds, defaults.transition.seconds),
+      tuning: readTransitionTuning(data.tuning),
     });
     return node;
   });

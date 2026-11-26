@@ -164,6 +164,6 @@ export function makeTimelineScene(canvas, timeline, images) {
     outgoing.draw(index, time);
     incoming.draw(index + 1, time);
     drawTransition(context, transition.effect, outgoing.canvas, incoming.canvas,
-      (frame - transition.start) / (transition.end - transition.start));
+      (frame - transition.start) / (transition.end - transition.start), transition.options);
   };
 }

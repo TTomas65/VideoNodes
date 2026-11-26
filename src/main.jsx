@@ -19,7 +19,7 @@ const time = () => new Intl.DateTimeFormat('hu', { hour: '2-digit', minute: '2-d
 const fileStem = (title) => title.trim().replace(/[^\p{L}\p{N} _-]+/gu, '-').replace(/\s+/g, '-') || 'present-fflow';
 const log = (message, kind = 'info', area = 'Projekt') => ({ id: crypto.randomUUID(), at: time(), message, kind, area });
 const nodeKinds = Object.keys(label);
-const cardHeights = { text: 410, background: 335, transition: 220, render: 720, video: 500 };
+const cardHeights = { text: 410, background: 335, transition: 290, render: 720, video: 500 };
 const starterFit = { padding: { top: '8%', right: '5%', bottom: '4%', left: '4%' }, maxZoom: 1 };
 const sceneSignature = (id, nodes, edges) => {
   const render = nodes.find((node) => node.id === id && node.type === 'render');

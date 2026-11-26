@@ -18,7 +18,8 @@ export function makeTimeline(inputs, settings, background) {
     const overlap = pendingTransition ? Math.max(0, Math.min(framesFor(pendingTransition.seconds, fps),
       previous.end - previous.start - incomingFrames - 1, length - 1)) : 0;
     const start = frameCount - overlap;
-    if (overlap) previous.transition = { effect: pendingTransition.effect, start, end: frameCount };
+    if (overlap) previous.transition = { effect: pendingTransition.effect, start, end: frameCount,
+      options: pendingTransition.tuning?.[pendingTransition.effect] };
     frameCount = start + length;
     const animationEnd = start + (text ? framesFor(text.seconds, fps) : 1);
     scenes.push({ port, text, start, end: frameCount, animationEnd,

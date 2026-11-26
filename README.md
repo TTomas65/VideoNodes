@@ -31,6 +31,8 @@ Az előnézet és a render sorszám szerint halad, az üres bemeneteket kihagyva
 
 Az **Átmenet** kártyát a **Szöveg** kimenete és az adott jelenet renderbemenete közé kösd. Válassz például áttűnést, kipördülést, darabokra esést vagy lapozást, majd adj meg 0,1–5 másodpercet. Az effekt az adott jelenet végén indul, és a következő bekötött jelenetre vált. A két rész fedése rövidíti a teljes videót. A renderelő a rendelkezésre álló képkockákhoz igazítja a fedést. Az utolsó jelenet a saját hosszával ér véget.
 
+Az Átmenet **Előnézet** gombja a kártyához tartozó jelenetet és a következő bekötött jelenetet játssza le a projekt háttereivel és időzítésével. Egyetlen jelenet esetén azt önmagában mutatja. Az **Átmenetek szerkesztése** ablakban a kilenc mozgó A/B bélyegkép közül választhatsz, a nagy mintát megállíthatod és tekerheted. A kiválasztott effekt időgörbéje és a hozzá tartozó beállítások, például az irány, a fordulat vagy a hajtás szélessége finomhangolhatók. Az **Alkalmazás** a kártyához menti az értékeket, amelyeket az előnézet és a render is használ.
+
 ## Háttérkártya
 
 Az **FFmpeg render** kártya **Háttér** bemenete a jelenetek közös hátterét adja. Ha egy **Szöveg** kártya bal oldali **Háttér** bemenetére is kötsz háttérkártyát, az adott jelenet ezt használja az előnézetben és a renderelt videóban. Az egyedi háttér animációja a jelenet elején indul. Ha a jelenethez egyik bemeneten sem kapcsolódik háttér, fekete lesz. A renderelőhöz kötött közös háttér szöveg nélkül is renderelhető, a **Jelenet 01** hosszával.

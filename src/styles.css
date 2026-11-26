@@ -487,6 +487,39 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
 .add-gradient-color { min-height: 28px; justify-self: start; font-size: 11px; }
 .gradient-footer { justify-content: flex-end; border-top: 1px solid #ffffff23; }
 
+.transition-node-actions { display: grid; gap: 7px; }
+.transition-node-actions .button { min-height: 32px; font-size: 12px; }
+.transition-preview-dialog { width: min(860px, calc(100% - 28px)); }
+.transition-preview-dialog .transition-preview-footer {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 12px;
+}
+.transition-preview-dialog .transition-preview-footer > .transition-preview-label {
+  grid-column: 1 / -1; color: #bbcbdf; font-size: 12px;
+}
+.transition-playback-buttons { display: flex; align-items: center; gap: 4px; }
+.transition-preview-footer input[type='range'], .transition-stage-controls input[type='range'] {
+  min-width: 0; margin: 0; width: 100%; accent-color: #acd5f2; cursor: pointer;
+}
+.transition-time { white-space: nowrap; color: #c1d1e8; font-variant-numeric: tabular-nums; }
+.transition-empty { padding: 12px 16px; color: var(--secondary); font-size: 13px; }
+.transition-editor { width: min(1080px, calc(100% - 28px)); height: min(746px, calc(100dvh - 28px)); }
+.transition-workspace { grid-template-columns: minmax(0, 1fr) 382px; }
+.transition-surface { height: min(48dvh, 420px); }
+.transition-stage-controls .transition-time { min-width: 36px; text-align: right; }
+.transition-effect-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.transition-effect-grid button {
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden; padding: 0;
+  border: 1px solid #687384; border-radius: 7px; background: #333844; color: #dce3ee; text-align: left;
+}
+.transition-effect-grid button:hover, .transition-effect-grid button[aria-pressed='true'] {
+  border-color: #a8d4ed; background: #404f61; color: #f4faff;
+}
+.transition-effect-grid button[aria-pressed='true'] { box-shadow: 0 0 0 1px #afd4e558; }
+.transition-effect-grid canvas { display: block; width: 100%; aspect-ratio: 16 / 9; height: auto; background: #121723; }
+.transition-effect-grid button span { padding: 5px 6px; font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; }
+.transition-tuning-title { display: flex; align-items: center; gap: 7px; color: #c9dcf0; }
+.transition-tuning-title h3 { flex: 1; }
+
 @media (max-width: 700px) {
   .gradient-workspace { display: block; overflow: auto; }
   .gradient-preview { padding: 10px; }
