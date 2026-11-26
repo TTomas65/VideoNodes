@@ -1,15 +1,11 @@
 import { defaultBackground, hexColor, maxProjectImageData, range, readBackground } from './background';
 import { defaultSceneSeconds, framesFor, maxSceneSeconds } from './timeline';
 import { maxTransitionSeconds, readTransitionTuning, transitionEffects } from './transitions';
-import { captionFonts, maxCaptionLength, readPlacement, readTextRuns } from './caption-format';
+import { maxCaptionLength, readCaptionAlignments, readPlacement, readTextRuns } from './caption-format';
+import { readCaptionFont } from './caption-fonts';
+import { captionDuration, entranceEffects, maxPhaseSeconds, readCaptionPhase, readMotionTuning } from './caption-motion';
 import starter from '../backups/starter.json';
 
-export const effects = {
-  slide: 'Beúsztatás', fog: 'Ködből előtűnés', bounce: 'Bepattogás',
-  fade: 'Halványból éles', zoom: 'Közelítés', type: 'Írógép', wipe: 'Sávos felfedés',
-};
-
-export const fonts = captionFonts;
 export const resolutions = {
   '1280x720': { label: 'HD', width: 1280, height: 720 },
   '1920x1080': { label: 'Full HD', width: 1920, height: 1080 },
@@ -41,7 +37,7 @@ export const scenePorts = Array.from({ length: 10 }, (_, index) => {
 
 export const defaults = {
   text: { text: 'A történet\nitt kezdődik.', font: 'Inter', color: '#f2f3fa', effect: 'slide', seconds: 1.2 },
-  render: { resolution: '1920x1080', fps: 30, sceneDurations: scenePorts.map(() => defaultSceneSeconds), format: 'mp4', crf: 20 },
+  render: { resolution: '1920x1080', fps: 30, sceneDurations: scenePorts.map(() => null), format: 'mp4', crf: 20 },
   video: { loop: false },
   background: defaultBackground,
   transition: { effect: 'dissolve', seconds: 0.8, tuning: {} },
@@ -59,7 +55,8 @@ export function isLegacyExample(project) {
   const cardAt = (type, x, y) => project.nodes.find((node) => node.id === `${type}-1` && node.type === type
     && node.position.x === x && node.position.y === y);
   const text = cardAt('text', 0, 0);
-  if (!text || text.data.runs?.length || text.data.placement || !cardAt('render', 306, 51) || !cardAt('video', 612, 24)) return false;
+  if (!text || text.data.runs?.length || text.data.placement || text.data.middle || text.data.exit || text.data.alignments || text.data.motionTuning
+    || !cardAt('render', 306, 51) || !cardAt('video', 612, 24)) return false;
   return Object.entries(defaults.text).every(([key, value]) => text.data[key] === value)
     && project.edges.some(({ source, target, targetHandle }) => source === 'text-1' && target === 'render-1' && targetHandle === scenePorts[0].id)
     && project.edges.some(({ source, target, targetHandle }) => source === 'render-1' && target === 'video-1' && targetHandle == null);
@@ -131,14 +128,22 @@ export function readProject(value) {
     if (item.type === 'text') {
       const text = typeof data.text === 'string' ? data.text.slice(0, maxCaptionLength) : defaults.text.text;
       const runs = readTextRuns(data.runs, text.length);
+      const alignments = readCaptionAlignments(data.alignments, text.split('\n').length);
       const placement = readPlacement(data.placement);
+      const middle = readCaptionPhase('middle', data.middle);
+      const exit = readCaptionPhase('exit', data.exit);
+      const motionTuning = readMotionTuning(data.motionTuning);
       Object.assign(node.data, {
         text,
-        font: fonts.includes(data.font) ? data.font : defaults.text.font,
+        font: readCaptionFont(data.font) ?? defaults.text.font,
         color: hexColor(data.color, defaults.text.color),
-        effect: Object.hasOwn(effects, data.effect) ? data.effect : defaults.text.effect,
-        seconds: range(data.seconds, 0.1, 10, defaults.text.seconds),
+        effect: Object.hasOwn(entranceEffects, data.effect) ? data.effect : defaults.text.effect,
+        seconds: range(data.seconds, 0.1, maxPhaseSeconds, defaults.text.seconds),
+        ...(middle && { middle }),
+        ...(exit && { exit }),
+        ...(motionTuning && { motionTuning }),
         ...(runs.length && { runs }),
+        ...(Object.keys(alignments).length && { alignments }),
         ...(placement && { placement }),
       });
     }
@@ -175,11 +180,13 @@ export function readProject(value) {
     if (!legacyLengths.has(node.id)) continue;
     const { fps, sceneDurations } = node.data;
     const minimum = framesFor(legacyLengths.get(node.id), fps);
-    const lengths = renderSources(node.id, nodes, edges).inputs.map(({ text }) => text?.text.trim() ? framesFor(text.seconds, fps) : 0);
+    const lengths = renderSources(node.id, nodes, edges).inputs.map(({ text }) => text?.text.trim() ? framesFor(captionDuration(text), fps) : 0);
     const last = lengths.findLastIndex(Boolean);
     const hold = minimum - lengths.reduce((sum, frames) => sum + frames, 0);
     if (last === -1) sceneDurations[0] = minimum / fps;
-    else if (hold > 0) sceneDurations[last] = (lengths[last] + hold) / fps;
+    else lengths.forEach((length, index) => {
+      if (length) sceneDurations[index] = (length + (index === last ? Math.max(0, hold) : 0)) / fps;
+    });
   }
   const viewport = value.viewport ? {
     x: range(value.viewport.x, -150000, 150000, 0), y: range(value.viewport.y, -150000, 150000, 0),

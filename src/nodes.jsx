@@ -1,14 +1,17 @@
 import { createContext, lazy, Suspense, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
-import { Blend, Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Settings2, Shuffle, Trash2, Type, X } from 'lucide-react';
-import { backgroundPort, cardWidths, defaults, effects, fonts, formats, label, linkedBackground, maxCardWidth, minCardWidths, outgoingRender, qualities, renderSources, resolutions, scenePorts, upstream } from './project';
+import { Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Settings2, Shuffle, Trash2, Type, X } from 'lucide-react';
+import { backgroundPort, cardWidths, defaults, formats, label, linkedBackground, maxCardWidth, minCardWidths, outgoingRender, qualities, renderSources, resolutions, scenePorts, upstream } from './project';
 import { BackgroundFields } from './background-node';
 import { Color, Seconds, Select } from './fields';
+import { FontPicker } from './font-picker';
+import { loadCaptionFonts } from './caption-fonts';
 import { Preview } from './preview';
 import { durationFor, makeTimeline, maxSceneSeconds } from './timeline';
 import { maxTransitionSeconds, transitionEffects } from './transitions';
-import { maxCaptionLength, rebaseTextRuns } from './caption-format';
+import { maxCaptionLength, rebaseCaptionAlignments, rebaseTextRuns } from './caption-format';
+import { captionPhases, captionPosterTime, captionTiming, entranceEffects, maxPhaseSeconds, phaseFor, phasePatch } from './caption-motion';
 
 const TransitionDialog = lazy(() => import('./transition-dialog'));
 const CaptionEditor = lazy(() => import('./caption-editor'));
@@ -70,11 +73,18 @@ function TextNode({ id, data, selected }) {
   const linkedRender = showingPreview ? outgoingRender(id, nodes, edges) : undefined;
   const background = showingPreview ? linkedBackground(id, nodes, edges) ?? linkedBackground(linkedRender?.id, nodes, edges) : undefined;
   const settings = linkedRender?.data ?? defaults.render;
+  const editPhase = (phase, patch) => {
+    for (const [key, value] of Object.entries(phasePatch(data, phase, patch))) set(key, value);
+  };
 
   function setText(text) {
     if (data.runs?.length) {
       const runs = rebaseTextRuns(data.text, text, data.runs);
       set('runs', runs.length ? runs : undefined);
+    }
+    if (data.alignments) {
+      const alignments = rebaseCaptionAlignments(data.text, text, data.alignments);
+      set('alignments', Object.keys(alignments).length ? alignments : undefined);
     }
     set('text', text);
   }
@@ -82,12 +92,28 @@ function TextNode({ id, data, selected }) {
   return <Card id={id} type="text" selected={selected} output="Szöveg">
     <label className="field">Tartalom<textarea rows={2} maxLength={maxCaptionLength} value={data.text} placeholder="Írd be a szöveget…" onChange={(event) => setText(event.target.value)} /></label>
     <div className="fields-two text-style-fields">
-      <label className="field">Betűtípus<Select value={data.font} onChange={(event) => set('font', event.target.value)}>{fonts.map((font) => <option key={font} value={font}>{font}</option>)}</Select></label>
-      <label className="field">Szín<Color value={data.color} onChange={(value) => set('color', value)} /></label>
+      <label className="field">Betűtípus<FontPicker value={data.font} onChange={(font) => set('font', font)} /></label>
+      <label className="field">Szín<Color label="Szövegszín" value={data.color} onChange={(value) => set('color', value)} /></label>
     </div>
     <div className="field-divider" />
-    <label className="field"><span className="field-with-icon"><Blend size={13} /> Animáció</span><Select aria-label="Animáció" value={data.effect} onChange={(event) => set('effect', event.target.value)}>{Object.entries(effects).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</Select></label>
-    <label className="field field-inline">Animáció ideje<Seconds value={data.seconds} max={10} onChange={(value) => set('seconds', value)} /></label>
+    <div className="caption-phase-fields">
+      {Object.entries(captionPhases).map(([phase, { label, effects }]) => {
+        const { effect, seconds, totalSeconds } = phaseFor(data, phase);
+        return <div className="caption-phase-field" key={phase}>
+          <label className="field">{label}<Select aria-label={label} value={effect}
+            onChange={(event) => editPhase(phase, { effect: event.target.value })}>
+            {Object.entries(effects).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+          </Select></label>
+          <Seconds label={`${label} időtartama`} value={seconds} max={maxPhaseSeconds} min={effect === 'none' ? 0 : 0.1}
+            disabled={effect === 'none'} onChange={(next) => editPhase(phase, { seconds: next })} />
+          {phase === 'middle' && <label className="field field-inline caption-phase-total">Köztes teljes ideje
+            <Seconds label="Köztes teljes ideje" value={totalSeconds} min={seconds} max={maxPhaseSeconds} disabled={effect === 'none'}
+              title="Az effekt ideje és az utána következő mozdulatlan szakasz együtt."
+              onChange={(next) => editPhase(phase, { totalSeconds: next })} />
+          </label>}
+        </div>;
+      })}
+    </div>
     <div className="node-dialog-actions">
       <button type="button" className="button text-preview-button" aria-haspopup="dialog" disabled={!data.text.trim()} onClick={() => setPreviewOpen(true)}>
         <Eye size={15} /> Előnézet
@@ -98,10 +124,15 @@ function TextNode({ id, data, selected }) {
     {editorOpen && <Suspense fallback={null}>
       <CaptionEditor text={data} settings={settings} background={background} onClose={() => setEditorOpen(false)} onApply={(caption) => {
         set('text', caption.text);
+        set('color', caption.color);
         set('runs', caption.runs.length ? caption.runs : undefined);
+        set('alignments', Object.keys(caption.alignments ?? {}).length ? caption.alignments : undefined);
+        set('motionTuning', caption.motionTuning);
         set('placement', caption.placement ?? undefined);
         set('effect', caption.effect);
         set('seconds', caption.seconds);
+        set('middle', caption.middle);
+        set('exit', caption.exit);
       }} />
     </Suspense>}
   </Card>;
@@ -155,12 +186,18 @@ function RenderNode({ id, data, selected }) {
 
   function sceneControls(index, name) {
     const progress = sceneProgress?.[index];
-    const placeholder = durationFor(data, index, inputs[index].text);
+    const text = inputs[index].text;
+    const actual = durationFor(data, index, text);
+    const configured = data.sceneDurations[index];
     return <>
       <div className="scene-timing nodrag nowheel">
         {sceneProgress && <span className="scene-percent" aria-hidden="true">{progress === undefined ? '–' : `${progress}%`}</span>}
-        <Seconds value={data.sceneDurations[index]} placeholder={placeholder.toLocaleString('hu-HU', { maximumFractionDigits: 2 })}
-          label={`${name} hossza`} max={maxSceneSeconds} onChange={(value) => setSceneDuration(index, value)} />
+        <Seconds value={configured == null ? null : actual} placeholder={actual.toLocaleString('hu-HU', { maximumFractionDigits: 2 })}
+          label={`${name} hossza`} max={maxSceneSeconds}
+          title={configured != null && actual > configured ? 'Az animációs fázisok összege hosszabb a megadott jelenethossznál.' : undefined}
+          onChange={(value) => {
+            if (value !== actual || configured == null) setSceneDuration(index, value);
+          }} />
       </div>
       {sceneProgress && (progress === undefined ? <span className="scene-progress-track inactive" aria-hidden="true" />
         : <div className="scene-progress-track" role="progressbar" aria-label={`${name} renderelése`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
@@ -187,30 +224,44 @@ function RenderNode({ id, data, selected }) {
   </Card>;
 }
 
-const stamp = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+function stamp(seconds) {
+  const centiseconds = Math.round(seconds * 100);
+  const clock = `${String(Math.floor(centiseconds / 6000)).padStart(2, '0')}:${String(Math.floor(centiseconds / 100) % 60).padStart(2, '0')}`;
+  const fraction = centiseconds % 100;
+  return fraction ? `${clock},${String(fraction).padStart(2, '0').replace(/0$/, '')}` : clock;
+}
 
 function TextPreviewDialog({ text, settings, background, onClose }) {
   const dialog = useRef(null);
   const title = useId();
   const [time, setTime] = useState(0);
   const [replay, setReplay] = useState(0);
+  const [fontsReady, setFontsReady] = useState(false);
+  const { duration, middleTotal, exit } = captionTiming(text);
 
   useEffect(() => {
     dialog.current.showModal();
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+    loadCaptionFonts([text]).then(() => { if (mounted) setFontsReady(true); });
+    return () => { mounted = false; };
+  }, [text]);
+
+  useEffect(() => {
+    if (!fontsReady) return;
     let frame;
     let start;
     const tick = (now) => {
       start ??= now;
-      const elapsed = Math.min(text.seconds, (now - start) / 1000);
+      const elapsed = Math.min(duration, (now - start) / 1000);
       setTime(elapsed);
-      if (elapsed < text.seconds) frame = requestAnimationFrame(tick);
+      if (elapsed < duration) frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [replay, text.seconds]);
+  }, [replay, duration, fontsReady]);
 
   return createPortal(<dialog ref={dialog} className="text-preview-dialog" aria-labelledby={title} onClose={onClose} onKeyDown={(event) => event.stopPropagation()}>
     <header>
@@ -218,10 +269,10 @@ function TextPreviewDialog({ text, settings, background, onClose }) {
       <h2 id={title}>Szöveg előnézete</h2>
       <button type="button" className="icon-button" aria-label="Előnézet bezárása" onClick={() => dialog.current.close()}><X size={17} /></button>
     </header>
-    <div className="text-preview-stage"><Preview text={text} settings={settings} background={background} time={time} size={960} /></div>
-    <progress className="text-preview-progress" aria-label="Animáció előrehaladása" max={text.seconds} value={time} />
+    <div className="text-preview-stage" aria-busy={!fontsReady}><Preview text={text} settings={settings} background={background} time={time} duration={duration} size={960} /></div>
+    <progress className="text-preview-progress" aria-label="Animáció előrehaladása" max={duration} value={time} />
     <footer>
-      <span>{effects[text.effect]} · {text.seconds.toLocaleString('hu-HU')} mp</span>
+      <span>{middleTotal || exit ? 'Teljes előnézet' : entranceEffects[text.effect]} · {duration.toLocaleString('hu-HU')} mp</span>
       <button type="button" className="button" onClick={() => { setTime(0); setReplay((value) => value + 1); }}><RotateCcw size={14} /> Újrajátszás</button>
     </footer>
   </dialog>, document.body);
@@ -237,7 +288,10 @@ function VideoNode({ id, data, selected, width }) {
     [settings, background, ...inputs.flatMap(({ text, background, transition }) => [text, background, transition])]);
   const duration = output?.duration ?? timeline.duration;
   const firstScene = timeline.scenes[0];
-  const posterTime = firstScene?.text ? (Math.min(firstScene.transition?.start ?? firstScene.end, firstScene.animationEnd) - 1) / timeline.fps : 0;
+  const animationEnd = firstScene?.timing?.adaptive
+    ? firstScene.start + Math.ceil(captionPosterTime(firstScene.text, firstScene.timing) * timeline.fps) + 1
+    : firstScene?.animationEnd;
+  const posterTime = firstScene?.text ? Math.max(firstScene.start, Math.min(firstScene.transition?.start ?? firstScene.end, animationEnd) - 1) / timeline.fps : 0;
   const previewSize = Math.max(480, Math.ceil((width ?? cardWidths.video) / 128) * 128);
   const video = useRef(null);
   const screen = useRef(null);

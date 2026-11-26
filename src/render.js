@@ -2,6 +2,8 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { makeTimelineScene } from './scene';
 import { formats, resolutions } from './project';
 import { backgroundImageSources, loadImage, movingBackground } from './background';
+import { captionFrameRanges } from './timeline';
+import { loadCaptionFonts } from './caption-fonts';
 
 const ffmpeg = new FFmpeg();
 
@@ -32,7 +34,7 @@ export async function renderVideo(timeline, settings, report) {
   const sources = backgroundImageSources(timeline.scenes.map(({ background }) => background));
   const [imageEntries] = await Promise.all([
     Promise.all(sources.map(async (src) => [src, await loadImage(src)])),
-    document.fonts.ready,
+    loadCaptionFonts(timeline.scenes.map(({ text }) => text)),
   ]);
   const { width, height } = resolutions[settings.resolution];
   const { container, mime } = formats[settings.format];
@@ -41,9 +43,8 @@ export async function renderVideo(timeline, settings, report) {
   Object.assign(canvas, { width, height });
   const draw = makeTimelineScene(canvas, timeline, new Map(imageEntries));
   const { frameCount } = timeline;
-  const frameRanges = timeline.scenes.map(({ start, end, animationEnd, background }) => ({
-    start, end: movingBackground(background) ? end : Math.min(end, animationEnd),
-  }));
+  const frameRanges = timeline.scenes.flatMap((scene) => movingBackground(scene.background)
+    ? [{ start: scene.start, end: scene.end }] : captionFrameRanges(scene, timeline.fps));
   for (const { transition } of timeline.scenes) {
     if (transition) frameRanges.push({ start: transition.start, end: transition.end + 1 });
   }

@@ -3,6 +3,8 @@ import { sceneAt, sceneTime } from './timeline';
 import { drawTransition } from './transitions';
 import { graphemeSegments } from './caption-format';
 import { layoutCaption } from './caption-layout';
+import { captionMotionOptions, captionTiming, motionProgress } from './caption-motion';
+import { captionFontFamily } from './caption-fonts';
 
 const graphemes = (text) => Array.from(graphemeSegments(text), ({ segment }) => segment);
 const ease = (value) => 1 - (1 - value) ** 3;
@@ -54,7 +56,7 @@ function prepareBackdrop(canvas, background, image) {
 }
 
 function layoutPlainText(context, text, width, height) {
-  const family = text.font === 'Inter' ? '"Inter Variable", sans-serif' : `"${text.font}", sans-serif`;
+  const family = captionFontFamily(text.font);
   const font = (size) => `650 ${size}px ${family}`;
   let size = Math.min(width * 0.092, height * 0.158);
   let lines;
@@ -87,60 +89,128 @@ function layoutPlainText(context, text, width, height) {
   };
 }
 
-function prepareText(canvas, text) {
+const fraction = (time, duration) => Math.max(0, Math.min(1, time / duration));
+
+function prepareText(canvas, text, timing = captionTiming(text)) {
   const { width, height } = canvas;
   const context = canvas.getContext('2d');
-  const layout = text.runs?.length || text.placement ? layoutCaption(context, text, width, height) : layoutPlainText(context, text, width, height);
+  const scrolling = text.effect === 'credits' || text.exit?.effect === 'credits';
+  const entrance = captionMotionOptions(text.motionTuning, 'entrance', text.effect);
+  const middle = captionMotionOptions(text.motionTuning, 'middle', text.middle?.effect ?? 'none');
+  const outgoing = captionMotionOptions(text.motionTuning, 'exit', text.exit?.effect ?? 'none');
+  const entryAmount = entrance.intensity / 100;
+  const centerAmount = (middle.intensity ?? 100) / 100;
+  const exitAmount = (outgoing.intensity ?? 100) / 100;
+  const scrollScale = scrolling ? (text.effect === 'credits' ? entrance.detail : outgoing.detail) / 100 : 1;
+  const rich = scrolling || text.runs?.length || text.alignments || text.placement || timing.middle && text.middle.effect !== 'still';
+  const layout = rich ? layoutCaption(context, text, width, height, scrolling, scrollScale) : layoutPlainText(context, text, width, height);
+  const [left, top, extent, blockHeight] = layout.wipe;
+  const [pivotX, pivotY] = layout.pivot ?? [0, 0];
+  const rollThrough = text.effect === 'credits' && !timing.middle && !timing.exit;
+  const still = timing.middle && text.middle.effect === 'still';
 
   return (time) => {
-    const progress = Math.max(0, Math.min(1, time / text.seconds));
+    const linear = fraction(time, timing.entrance);
+    const progress = motionProgress(linear, entrance.dynamics);
+    if (rollThrough && progress === 1) return;
     const remaining = 1 - ease(progress);
+    const exit = timing.exit && time >= timing.exitStart
+      ? motionProgress(fraction(time - timing.exitStart + 1e-9, timing.exit), outgoing.dynamics) : 0;
+    if (exit === 1) return;
+    const animation = timing.middle && time > timing.entrance && time < timing.entrance + timing.middle
+      ? text.middle.effect : undefined;
+    const motion = animation ? motionProgress((time - timing.entrance) / timing.middle, middle.dynamics) : 0;
     context.save();
+    let scrollOffset = text.effect === 'credits' ? layout.roll(progress, rollThrough ? 'through' : 'in', entryAmount) : 0;
+    if (text.exit?.effect === 'credits' && exit) scrollOffset += layout.roll(exit, 'out', exitAmount);
     context.translate(layout.x, layout.y);
     if (layout.rotation) {
-      const [x, y] = layout.pivot;
-      context.translate(x, y);
+      context.translate(pivotX, pivotY);
       context.rotate(layout.rotation);
-      context.translate(-x, -y);
+      context.translate(-pivotX, -pivotY);
     }
     switch (text.effect) {
       case 'slide':
-        context.translate(-width * 0.34 * remaining, 0);
+        move(width * 0.34 * remaining * entryAmount, entrance.detail);
         context.globalAlpha = 1 - remaining;
         break;
       case 'fog':
-        context.filter = `blur(${layout.fontSize * 0.37 * remaining}px)`;
+        if (remaining) context.filter = `blur(${layout.fontSize * 0.37 * remaining * entryAmount}px)`;
         context.globalAlpha = progress ** 1.3;
         break;
       case 'bounce':
-        context.translate(0, -height * 0.43 * Math.abs(Math.cos(progress * Math.PI * 2.5)) * (1 - progress) ** 1.55);
+        context.translate(0, -height * 0.43 * Math.abs(Math.cos(progress * Math.PI * (entrance.detail - 0.5))) * (1 - progress) ** 1.55 * entryAmount);
         context.globalAlpha = Math.min(1, progress * 5);
         break;
       case 'fade':
-        context.globalAlpha = progress ** 2 * (3 - 2 * progress);
+        context.globalAlpha = (progress ** 2 * (3 - 2 * progress)) ** entryAmount;
         break;
       case 'zoom': {
-        const scale = 1 - 0.48 * remaining;
+        const scale = 1 - 0.48 * remaining * entryAmount;
         context.scale(scale, scale);
         context.globalAlpha = 1 - remaining;
         break;
       }
       case 'wipe': {
-        const [left, top, extent, height] = layout.wipe;
-        context.beginPath();
-        context.rect(left, top, extent * ease(progress), height);
-        context.clip();
+        if (progress < 1) clipWipe(0, ease(progress) ** entryAmount, entrance.detail);
         break;
       }
     }
-    layout.draw(progress);
+    if (animation === 'float') context.translate(0, -layout.fontSize * 0.2 * Math.sin(motion * Math.PI * 2 * middle.detail) * centerAmount);
+    if (animation === 'breathe') {
+      scaleAroundPivot(1 + Math.sin(motion * Math.PI * middle.detail) ** 2 * 0.12 * centerAmount);
+    }
+    if (exit) {
+      const easing = exit ** 2 * (3 - 2 * exit);
+      const effect = text.exit.effect;
+      if (effect === 'slide') move(width * 0.44 * easing * exitAmount, outgoing.detail);
+      if (effect === 'lift') move(height * 0.49 * easing * exitAmount, outgoing.detail);
+      if (effect === 'zoom') scaleAroundPivot(Math.max(0.04, 1 - easing * exitAmount));
+      if (effect === 'fog') context.filter = `blur(${layout.fontSize * 0.42 * easing * exitAmount}px)`;
+      if (effect === 'wipe') {
+        const covered = 1 - (1 - easing) ** exitAmount;
+        clipWipe(covered, 1 - covered, outgoing.detail);
+      } else if (effect !== 'credits') context.globalAlpha = (1 - easing) ** (effect === 'fade' ? exitAmount : 1);
+    }
+    if (still) {
+      context.globalAlpha *= centerAmount;
+      if (middle.detail !== 100) scaleAroundPivot(middle.detail / 100);
+    }
+    layout.draw(text.effect === 'type' ? progress ** entryAmount : progress, animation, motion, middle, scrollOffset);
     context.restore();
   };
+
+  function scaleAroundPivot(scale) {
+    context.translate(pivotX, pivotY);
+    context.scale(scale, scale);
+    context.translate(-pivotX, -pivotY);
+  }
+
+  function move(distance, direction) {
+    const angle = direction * Math.PI / 180;
+    context.translate(Math.cos(angle) * distance, Math.sin(angle) * distance);
+  }
+
+  function clipWipe(start, width, direction) {
+    context.beginPath();
+    if (!direction) context.rect(left + extent * start, top, extent * width, blockHeight);
+    else {
+      const angle = direction * Math.PI / 180;
+      const span = extent * Math.abs(Math.cos(angle)) + blockHeight * Math.abs(Math.sin(angle));
+      const reserve = Math.hypot(extent, blockHeight);
+      context.save();
+      context.translate(left + extent / 2, top + blockHeight / 2);
+      context.rotate(angle);
+      context.rect(span * (start - 0.5), -reserve, span * width, reserve * 2);
+      context.restore();
+    }
+    context.clip();
+  }
 }
 
-export function makeScene(canvas, text, background, image) {
+export function makeScene(canvas, text, background, image, duration) {
   const drawBackground = prepareBackdrop(canvas, background, image);
-  const drawText = text?.text.trim() ? prepareText(canvas, text) : null;
+  const drawText = text?.text.trim() ? prepareText(canvas, text, captionTiming(text, duration)) : null;
   return (time) => {
     drawBackground(time);
     drawText?.(time);
@@ -148,7 +218,7 @@ export function makeScene(canvas, text, background, image) {
 }
 
 function makeTimelinePainter(canvas, timeline, images) {
-  const titles = timeline.scenes.map(({ text }) => text ? prepareText(canvas, text) : null);
+  const titles = timeline.scenes.map(({ text, timing }) => text ? prepareText(canvas, text, timing) : null);
   let activeBackground;
   let drawBackground;
   return (index, time) => {

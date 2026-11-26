@@ -1,14 +1,14 @@
-import { useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Bold, CaseUpper, Eraser, Italic } from 'lucide-react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, CaseUpper, ChevronDown, Eraser, Italic } from 'lucide-react';
 import { baseKeymap, splitBlockKeepMarks } from 'prosemirror-commands';
 import { history, redo, undo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { Fragment, Schema, Slice } from 'prosemirror-model';
-import { EditorState, Selection } from 'prosemirror-state';
+import { AllSelection, EditorState, Selection, TextSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import 'prosemirror-view/style/prosemirror.css';
-import { captionFontFamily, captionFonts, captionSize, captionWeight, maxCaptionLength, readRunStyle, readTextRuns } from './caption-format';
-import { Color, Select } from './fields';
+import { captionAlignments, captionSize, captionWeight, maxCaptionLength, readAlignment, readRunStyle, readTextRuns } from './caption-format';
+import { captionFontFamily, fontName } from './caption-fonts';
 
 function spanStyle(format) {
   return [
@@ -24,7 +24,12 @@ function spanStyle(format) {
 const schema = new Schema({
   nodes: {
     doc: { content: 'paragraph+' },
-    paragraph: { content: 'text*', parseDOM: [{ tag: 'p' }, { tag: 'div' }], toDOM: () => ['p', 0] },
+    paragraph: {
+      content: 'text*',
+      attrs: { align: { default: null } },
+      parseDOM: ['p', 'div'].map((tag) => ({ tag, getAttrs: (element) => ({ align: readAlignment(element.dataset.captionAlign ?? element.style.textAlign) }) })),
+      toDOM: ({ attrs: { align } }) => ['p', align ? { 'data-caption-align': align, style: `text-align:${align}` } : {}, 0],
+    },
     text: { inline: true },
   },
   marks: {
@@ -42,10 +47,10 @@ const formatMark = schema.marks.format;
 const markValue = (marks) => formatMark.isInSet(marks)?.attrs.value ?? {};
 const marksFor = (value) => Object.keys(value).length ? [formatMark.create({ value })] : [];
 
-function makeDocument(text, runs) {
+function makeDocument(text, runs, alignments) {
   let start = 0;
   const marks = readTextRuns(runs, text.length);
-  const paragraphs = text.split('\n').map((line) => {
+  const paragraphs = text.split('\n').map((line, index) => {
     const end = start + line.length;
     const nodes = [];
     let cursor = start;
@@ -61,7 +66,7 @@ function makeDocument(text, runs) {
     }
     if (cursor < end) nodes.push(schema.text(text.slice(cursor, end)));
     start = end + 1;
-    return schema.nodes.paragraph.create(null, nodes);
+    return schema.nodes.paragraph.create({ align: alignments?.[index] ?? null }, nodes);
   });
   return schema.nodes.doc.create(null, paragraphs);
 }
@@ -69,8 +74,10 @@ function makeDocument(text, runs) {
 function extractDocument(doc) {
   let text = '';
   const runs = [];
+  const alignments = {};
   doc.forEach((paragraph, _offset, index) => {
     if (index) text += '\n';
+    if (paragraph.attrs.align) alignments[index] = paragraph.attrs.align;
     paragraph.forEach((node) => {
       const start = text.length;
       text += node.text;
@@ -78,7 +85,7 @@ function extractDocument(doc) {
       if (Object.keys(value).length) runs.push({ start, end: text.length, ...value });
     });
   });
-  return { text, runs: readTextRuns(runs, text.length) };
+  return { text, runs: readTextRuns(runs, text.length), alignments };
 }
 
 function selectionFormat(state) {
@@ -90,13 +97,13 @@ function selectionFormat(state) {
   return first ?? {};
 }
 
-function applyFormat(view, patch, focus) {
-  const { state } = view;
-  const { from, to, empty } = state.selection;
+function formatTransaction(state, patch, selection = state.selection) {
+  const { from, to, empty } = selection;
   const transaction = state.tr;
+  if (!state.selection.eq(selection)) transaction.setSelection(selection);
   const next = (marks) => patch ? marksFor(readRunStyle({ ...markValue(marks), ...patch })) : [];
   if (empty) {
-    transaction.setStoredMarks(next(state.storedMarks ?? state.selection.$head.marks()));
+    transaction.setStoredMarks(next(state.storedMarks ?? selection.$head.marks()));
   } else {
     state.doc.nodesBetween(from, to, (node, position) => {
       if (!node.isText) return;
@@ -107,8 +114,38 @@ function applyFormat(view, patch, focus) {
       if (marks.length) transaction.addMark(start, end, marks[0]);
     });
   }
-  view.dispatch(transaction);
-  if (focus) view.focus();
+  return transaction;
+}
+
+function paragraphAlignment({ doc, selection }) {
+  const values = new Set();
+  const { from, to } = selection.empty ? new AllSelection(doc) : selection;
+  doc.nodesBetween(from, to, (node) => { if (node.type === schema.nodes.paragraph) values.add(node.attrs.align); });
+  return values.size === 1 ? values.values().next().value : null;
+}
+
+function visibleSelection(view) {
+  const native = view.dom.ownerDocument.getSelection();
+  const { doc, selection } = view.state;
+  if (!native?.anchorNode || !native.focusNode || !view.dom.contains(native.anchorNode) || !view.dom.contains(native.focusNode)) {
+    return selection;
+  }
+  const anchor = view.posAtDOM(native.anchorNode, native.anchorOffset);
+  const head = view.posAtDOM(native.focusNode, native.focusOffset);
+  return TextSelection.between(doc.resolve(anchor), doc.resolve(head));
+}
+
+function alignParagraphs(view, align) {
+  const { state } = view;
+  const selection = visibleSelection(view);
+  const { from, to } = selection.empty ? new AllSelection(state.doc) : selection;
+  const transaction = state.tr;
+  if (!state.selection.eq(selection)) transaction.setSelection(selection);
+  state.doc.nodesBetween(from, to, (node, offset) => {
+    if (node.type === schema.nodes.paragraph && node.attrs.align !== align) transaction.setNodeMarkup(offset, undefined, { align });
+  });
+  if (transaction.docChanged) view.dispatch(transaction);
+  view.focus();
 }
 
 function SizeField({ value, change }) {
@@ -128,30 +165,53 @@ function SizeField({ value, change }) {
   </label>;
 }
 
-export function CaptionContent({ value, onChange, controller }) {
+const alignmentIcons = { left: AlignLeft, center: AlignCenter, right: AlignRight, justify: AlignJustify };
+
+export function CaptionContent({ value, onChange, controller, formatEdit, pickerId, onFormatOpen }) {
   const surface = useRef(null);
   const editor = useRef(null);
   const initial = useRef(value);
   const notify = useRef(onChange);
   notify.current = onChange;
   const [format, setFormat] = useState({});
+  const [alignment, setAlignment] = useState(null);
   const [limited, setLimited] = useState(false);
+  const trial = useRef(null);
+  const fontButton = useRef(null);
+  const colorButton = useRef(null);
+  const returnFocus = useRef(null);
+
+  useLayoutEffect(() => {
+    if (!formatEdit && returnFocus.current) {
+      returnFocus.current.focus();
+      returnFocus.current = null;
+    }
+  }, [formatEdit]);
 
   useEffect(() => {
     const state = EditorState.create({
-      doc: makeDocument(initial.current.text, initial.current.runs),
+      doc: makeDocument(initial.current.text, initial.current.runs, initial.current.alignments),
       plugins: [history(), keymap({ Enter: splitBlockKeepMarks, 'Shift-Enter': splitBlockKeepMarks, 'Mod-z': undo, 'Shift-Mod-z': redo, 'Mod-y': redo }), keymap(baseKeymap)],
     });
     const view = new EditorView(surface.current, {
       state,
+      editable: () => !trial.current,
       attributes: { role: 'textbox', 'aria-label': 'Felirat szövege', 'aria-multiline': 'true' },
       decorations(state) {
         const { from, to, empty } = state.selection;
-        return empty ? null : DecorationSet.create(state.doc, [Decoration.inline(from, to, { class: 'caption-selection' })]);
+        const decorations = empty ? [] : [Decoration.inline(from, to, { class: 'caption-selection' })];
+        if (trial.current?.value) {
+          const { property, value, selection: { from, to } } = trial.current;
+          const cssValue = property === 'font' ? captionFontFamily(value) : value;
+          if (from < to) decorations.push(Decoration.inline(from, to, {
+            class: `caption-live-${property}`, style: `--caption-live-${property}:${cssValue}`,
+          }));
+        }
+        return DecorationSet.create(state.doc, decorations);
       },
       clipboardTextParser(text, context) {
         const paragraphs = text.replace(/\r\n?/g, '\n').split('\n')
-          .map((line) => schema.nodes.paragraph.create(null, line ? schema.text(line, context.marks()) : null));
+          .map((line) => schema.nodes.paragraph.create({ align: context.parent.attrs.align ?? null }, line ? schema.text(line, context.marks()) : null));
         return Slice.maxOpen(Fragment.fromArray(paragraphs));
       },
       dispatchTransaction(transaction) {
@@ -164,37 +224,83 @@ export function CaptionContent({ value, onChange, controller }) {
         const next = view.state.apply(transaction);
         view.updateState(next);
         setFormat(selectionFormat(next));
+        setAlignment(paragraphAlignment(next));
         if (transaction.docChanged) {
           setLimited(false);
           notify.current(extractDocument(next.doc));
         }
       },
     });
+    setAlignment(paragraphAlignment(state));
     editor.current = view;
     return () => { view.destroy(); editor.current = null; };
   }, []);
 
   useImperativeHandle(controller, () => ({
-    replace(text, runs) {
+    replace(text, runs, alignments) {
       const view = editor.current;
       if (!view) return;
-      const next = makeDocument(text, runs);
+      const next = makeDocument(text, runs, alignments);
       const transaction = view.state.tr.replaceWith(0, view.state.doc.content.size, next.content);
       view.dispatch(transaction.setSelection(Selection.atStart(transaction.doc)));
+    },
+    previewFormat(value) {
+      const view = editor.current;
+      const pending = trial.current;
+      if (!view || !pending) return null;
+      pending.value = value;
+      view.updateState(view.state);
+      return extractDocument(formatTransaction(view.state, { [pending.property]: value }, pending.selection).doc).runs;
+    },
+    finishFormat(value, restoreFocus = true) {
+      const view = editor.current;
+      if (!view || !trial.current) return;
+      const { property, selection } = trial.current;
+      trial.current = null;
+      if (value) {
+        const transaction = formatTransaction(view.state, { [property]: value }, selection);
+        if (selection instanceof AllSelection) transaction.setSelection(view.state.selection.map(transaction.doc, transaction.mapping));
+        view.dispatch(transaction);
+        if (!view.state.doc.textContent) notify.current({ [property]: value });
+      } else if (!(selection instanceof AllSelection) && !view.state.selection.eq(selection)) {
+        view.dispatch(view.state.tr.setSelection(selection).setMeta('addToHistory', false));
+      } else view.updateState(view.state);
+      if (restoreFocus) returnFocus.current = property === 'font' ? fontButton.current : colorButton.current;
     },
   }), []);
 
   const style = (patch, focus = true) => {
-    if (editor.current) applyFormat(editor.current, patch, focus);
+    const view = editor.current;
+    if (!view) return;
+    view.dispatch(formatTransaction(view.state, patch));
+    if (focus) view.focus();
   };
   const bold = (format.weight ?? captionWeight) >= 750;
+  const fontOpen = formatEdit?.property === 'font';
+  const colorOpen = formatEdit?.property === 'color';
+  const color = (colorOpen ? formatEdit.candidate : null) ?? format.color ?? value.color;
+  const font = (fontOpen ? formatEdit.candidate : null) ?? format.font ?? value.font;
+  function startTrial(property, initial) {
+    const view = editor.current;
+    if (!view) return;
+    const selection = visibleSelection(view);
+    trial.current = { property, selection: selection.empty && view.state.doc.textContent ? new AllSelection(view.state.doc) : selection };
+    view.updateState(view.state);
+    onFormatOpen(property, initial);
+  }
   return <div className="caption-compose">
-    <div className="caption-formats" role="group" aria-label="Kijelölt szöveg formázása">
-      <label className="field">Betűtípus<Select aria-label="Betűtípus" value={format.font ?? value.font} onChange={(event) => style({ font: event.target.value })}>
-        {captionFonts.map((font) => <option key={font} value={font}>{font}</option>)}
-      </Select></label>
+    <div className="caption-formats" role="group" aria-label="Kijelölt szöveg formázása" inert={formatEdit ? true : undefined}>
+      <label className="field">Betűtípus<button type="button" className="font-field" aria-label="Betűtípus" aria-expanded={fontOpen}
+        aria-controls={fontOpen ? pickerId : undefined} ref={fontButton} onMouseDown={(event) => event.preventDefault()}
+        onClick={() => startTrial('font', font)}>
+        <span>{fontName(font)}</span><ChevronDown size={13} />
+      </button></label>
       <SizeField value={format.size ?? captionSize.default} change={(size) => style({ size }, false)} />
-      <label className="field">Szín<Color label="Betűszín" value={format.color ?? value.color} onChange={(color) => style({ color }, false)} /></label>
+      <label className="field">Szín<button type="button" className="color-field" aria-label="Betűszín"
+        aria-expanded={colorOpen} aria-controls={colorOpen ? pickerId : undefined} ref={colorButton} onMouseDown={(event) => event.preventDefault()}
+        onClick={() => startTrial('color', color)}>
+        <span className="color-field-swatch" style={{ background: color }} /><span aria-hidden="true">{color.toUpperCase()}</span>
+      </button></label>
       <div className="caption-format-buttons">
         <button type="button" className="icon-button" aria-label="Félkövér" title="Félkövér" aria-pressed={bold}
           onMouseDown={(event) => event.preventDefault()} onClick={() => style({ weight: bold ? 400 : 800 })}><Bold size={17} /></button>
@@ -204,6 +310,14 @@ export function CaptionContent({ value, onChange, controller }) {
           onMouseDown={(event) => event.preventDefault()} onClick={() => style({ uppercase: !format.uppercase })}><CaseUpper size={17} /></button>
         <button type="button" className="icon-button" aria-label="Formázás törlése" title="Formázás törlése"
           onMouseDown={(event) => event.preventDefault()} onClick={() => style(null)}><Eraser size={17} /></button>
+      </div>
+      <div className="caption-format-buttons caption-align-buttons" role="group" aria-label="Szövegigazítás">
+        {Object.entries(captionAlignments).map(([key, label]) => {
+          const Icon = alignmentIcons[key];
+          return <button key={key} type="button" className="icon-button" aria-label={label} title={label}
+            aria-pressed={alignment === key} onMouseDown={(event) => event.preventDefault()}
+            onClick={() => { if (editor.current) alignParagraphs(editor.current, key); }}><Icon size={17} /></button>;
+        })}
       </div>
     </div>
     <div className="caption-content" ref={surface} style={{ fontFamily: captionFontFamily(value.font), color: value.color, fontWeight: captionWeight }} />

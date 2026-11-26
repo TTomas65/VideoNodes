@@ -15,7 +15,7 @@ A Vite kiírja a megnyitható helyi címet. A kiadási változatot az `npm run b
 
 ## Az első videó
 
-Első megnyitáskor a mintában a Szöveg kártya az első jelenethez, a Háttér kártya a renderelő Háttér bemenetéhez csatlakozik. Az elkészült videót a bekötött Videólejátszó mutatja. A minta és az újonnan hozzáadott renderkártyák MP4 (H.264), Full HD, 30 fps és 4 másodperces jelenethossz beállításokkal indulnak. Mentett projekt esetén a szerkesztő **Minta** gombjával nyithatod meg az indító elrendezést. Ha a böngésző a korábbi háromkártyás indítómintát tárolja, megnyitáskor a friss mintát kapod. Az eredeti vásznat a **Régi mentés megnyitása** gombbal érheted el a bal oldali sávban, az új minta mentése után is.
+Első megnyitáskor a mintában a Szöveg kártya az első jelenethez, a Háttér kártya a renderelő Háttér bemenetéhez csatlakozik. Az elkészült videót a bekötött Videólejátszó mutatja. A minta és az újonnan hozzáadott renderkártyák MP4 (H.264), Full HD, 30 fps és automatikus jelenethossz beállításokkal indulnak. Mentett projekt esetén a szerkesztő **Minta** gombjával nyithatod meg az indító elrendezést. Ha a böngésző a korábbi háromkártyás indítómintát tárolja, megnyitáskor a friss mintát kapod. Az eredeti vásznat a **Régi mentés megnyitása** gombbal érheted el a bal oldali sávban, az új minta mentése után is.
 
 1. A mintaprojektben írd át a **Szöveg** kártya tartalmát. Válassz betűtípust, színt, animációt és időtartamot. Az **Előnézet** gomb felugró ablakban lejátssza az aktuális animációt.
 2. Az **FFmpeg render** kártyán állítsd be a formátumot, a felbontást (akár 3840 × 2160), a képkockasebességet és a jelenetek hosszát. A minőségi beállítások a **Gyors előnézet** (CRF 26), a **Kiegyensúlyozott** (CRF 20) és a **Stúdió minőség** (CRF 15).
@@ -25,11 +25,19 @@ Kártyát kattintással vagy húzással adhatsz hozzá a kártyatárból. A jobb
 
 ## Feliratok szerkesztése
 
-A **Szövegek szerkesztése** ablakban kijelölt betűkön vagy több soron külön állítható a betűtípus, a szín, a méret és a betűstílus. A méret a Full HD képkockához viszonyított pixelérték. A feliratsablonok a meglévő sorokat formázzák. Üres szövegnél a sablon mintaszövege töltődik be. A **Mozgás** fül animált mintákat mutat, a **Pozíció** fül kilenc igazítási pontot, vízszintes és függőleges eltolást, valamint ±380°-os forgatást kínál. Az **Alkalmazás** a kártyára teszi a módosításokat, a **Mentés** pedig a projektbe írja őket.
+A **Szövegek szerkesztése** ablakban kijelölt betűkön vagy több soron külön állítható a betűtípus, a szín, a méret és a betűstílus. A balra, középre, jobbra és sorkitöltött igazítás a kijelöléssel érintett bekezdésekre vonatkozik. Kijelölés nélkül az egész feliratra érvényes. A betűméret a Full HD képkockához viszonyított pixelérték. Egy felirat legfeljebb 20 000 karakterből állhat. A feliratsablonok a meglévő sorokat formázzák. Üres szövegnél a sablon mintaszövege töltődik be. A **Pozíció** fülön az **Alaphelyzetbe állítás** a választott képernyőponthoz állítja vissza az eltolást, az elforgatást és a perspektívát. Az **Alkalmazás** a kártyára teszi a módosításokat, a **Mentés** pedig a projektbe írja őket.
+
+A **Betűtípus** választó alapértelmezett forrása a Google Fonts. A lista a betűtípus saját betűivel írja ki a nevét, és a látható webfontmintákat tölti be először. A szövegszerkesztő oldalsávjában több betűtípust is kipróbálhatsz a kijelölésen vagy az egész feliraton. A **Betű alkalmazása** elfogadja a próbát, a **Mégsem** visszaállítja a korábbi betűtípust. Az Inter a program része. Helyi Windows- és Linux-szerveren megnyitható a **Gépen telepített** lista is. A projekt az egyes betűtípusok nevét és forrását tárolja. Másik gépen a választott helyi betűtípusnak is telepítve kell lennie.
+
+A Szöveg kártyán és a **Mozgás** fülön külön állítható a megjelenés, a köztes animáció és az eltűnés. A megjelenés alapértéke 1,2 mp, a kikapcsolt fázisoké 0 mp. A köztes fázisban az **Effekt hossza** az animáció lefutása, a **Köztes teljes ideje** az effekt és az azt követő mozdulatlan tartás összege. A teljes köztes idő legalább az effekt hossza. A Szöveg kártya előnézete mindig a megjelenés, a teljes köztes idő és az eltűnés összegét játssza le. A mozgásminták automatikusan elindulnak. A kiválasztott effekt intenzitása, dinamikája és típustól függően például az iránya, a hullámok száma vagy a nagyítólencse szélessége állítható. A **Stábfelirat-görgetés** követi a felirat forgatását és perspektíváját. Ha köztes vagy eltűnési fázis követi, a görgetés ott áll meg, ahol a feliratot elhelyezted.
+
+A csúszkák alatti **Teljes animáció** a felirat minden fázisát lejátssza a nagy előnézetben. Az **Effekt animáció** az ott kiválasztott fázis effektjét mutatja a beállított effekthosszal.
+
+A színmezők közös **Színpalettáján** színkerék, HEX- és RGB-mezők, valamint 3–15 választható árnyalat található. Egy színkártya a HEX-mezőbe írja az értékét. Kézi beírás után az **Alkalmaz** vagy az Enter fogadja el az értéket. A feliratszerkesztőben az oldalsó paletta élőben színezi a kijelölést, illetve kijelölés nélkül a teljes szöveget. A **Szín alkalmazása** megőrzi a változtatást, a **Mégse** visszaállítja az eredeti színt. A **Színátmenet** lapon két végpontból 2–5 színpontot keverhetsz, állíthatod az irányt, és másolhatod a CSS-kódot. A háttérszerkesztő **Színátmenet generálása** gombjával a létrehozott lineáris átmenet közvetlenül alkalmazható.
 
 ## Több jelenet egy videóban
 
-Kösd a Szöveg kártyákat az **FFmpeg render** kártya **Jelenet 01–10** bemeneteire, és a sorok mezőiben add meg az egyes jelenetek hosszát. Üres időmezőnél a szöveganimáció saját ideje érvényesül. Hosszabb jelenetben az elkészült felirat a jelenet végéig látható. Rövidebb jelenetnél a váltás megszakíthatja az animációt.
+Kösd a Szöveg kártyákat az **FFmpeg render** kártya **Jelenet 01–10** bemeneteire. Üres jelenethossz-mezőnél a felirat teljes animációs ideje adja a jelenet hosszát. Például 1,2 mp megjelenés, 5 mp teljes köztes idő és 1,5 mp eltűnés együtt 7,7 mp. Hosszabb videójelenethez add meg a hosszt a renderkártyán. Ekkor a már megjelent felirat a jelenet végéig látható, illetve egy beállított eltűnés a jelenet végére kerül.
 
 Az előnézet és a render sorszám szerint halad, az üres bemeneteket kihagyva. A kék sávok jelenetenként követik az előrehaladást, az alsó jelző a teljes videót mutatja. A régi projektekben tárolt videóhossz a jelenetek hosszába kerül át. A korábbi szöveges kapcsolat a **Jelenet 01** bemenetre kerül.
 
@@ -48,7 +56,7 @@ A feltöltött háttérképet a böngésző menti, és a JSON-export is tartalma
 
 A **Mentés** új példányt készít az aktuális vászon képernyőképével. Helyi `npm run dev` vagy `npm run preview` futtatásnál a fájlok a `backups/saves` mappa egy-egy almappájába kerülnek. A **Projekt importálása** gomb megnyitja a név szerint kereshető képes galériát. Egy képre kattintva betölthető a mentés. A galériában a `backups/starter.json` kezdőprojekt és a külön **JSON-fájl megnyitása** gomb is elérhető. A hosztolt oldalon a képes mentések a böngészőben tárolódnak.
 
-Az elrendezés és a beállítások külön JSON-fájlba is exportálhatók. A videókat a lejátszóból töltheted le. A böngésző a formátum első renderelésekor tölti be a kódolót. Az MP4 motorja körülbelül 32 MB, a WebM motorja körülbelül 4,5 MB. Egy szöveganimáció legfeljebb 10 másodpercig tarthat, a jelenethossz 0,1 és 20 másodperc között állítható.
+Az elrendezés és a beállítások külön JSON-fájlba is exportálhatók. A videókat a lejátszóból töltheted le. A böngésző a formátum első renderelésekor tölti be a kódolót. Az MP4 motorja körülbelül 32 MB, a WebM motorja körülbelül 4,5 MB. Egy szöveganimációs fázis legfeljebb 180 másodpercig tarthat, a jelenethossz 0,1 és 540 másodperc között állítható.
 
 ## Könyvtárak
 

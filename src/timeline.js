@@ -1,8 +1,10 @@
-export const maxSceneSeconds = 20;
-export const defaultSceneSeconds = 4;
+import { captionSceneDuration, captionTiming } from './caption-motion.js';
+export { defaultSceneSeconds } from './caption-motion.js';
+
+export const maxSceneSeconds = 540;
 
 export const framesFor = (seconds, fps) => Math.max(1, Math.ceil(seconds * fps - 1e-8));
-export const durationFor = (settings, port, text) => settings.sceneDurations[port] ?? text?.seconds ?? defaultSceneSeconds;
+export const durationFor = (settings, port, text) => captionSceneDuration(text?.text.trim() ? text : null, settings.sceneDurations[port] ?? undefined);
 
 export function makeTimeline(inputs, settings, background) {
   const { fps } = settings;
@@ -21,8 +23,9 @@ export function makeTimeline(inputs, settings, background) {
     if (overlap) previous.transition = { effect: pendingTransition.effect, start, end: frameCount,
       options: pendingTransition.tuning?.[pendingTransition.effect] };
     frameCount = start + length;
-    const animationEnd = start + (text ? framesFor(text.seconds, fps) : 1);
-    scenes.push({ port, text, start, end: frameCount, animationEnd,
+    const timing = text && captionTiming(text, length / fps);
+    const animationEnd = start + (timing ? framesFor(timing.entrance, fps) : 1);
+    scenes.push({ port, text, start, end: frameCount, animationEnd, timing,
       background: sceneBackground ?? background, backgroundStart: sceneBackground ? start : 0 });
     incomingFrames = overlap;
     pendingTransition = transition;
@@ -43,8 +46,21 @@ export function sceneAt(timeline, time) {
 
 export function sceneTime(scene, fps, time) {
   const local = Math.max(0, time - scene.start / fps);
+  if (scene.timing?.adaptive) {
+    if (local + 1e-7 >= (scene.end - scene.start - 1) / fps) return scene.timing.duration;
+    return local;
+  }
   if (local + 1e-7 >= (scene.animationEnd - scene.start - 1) / fps) return scene.text.seconds;
   return local;
+}
+
+export function captionFrameRanges(scene, fps) {
+  const { start, end, animationEnd, timing, text } = scene;
+  if (!timing?.adaptive) return [{ start, end: Math.min(end, animationEnd) }];
+  const ranges = [{ start, end: Math.min(end, animationEnd + 1) }];
+  if (timing.middle && text.middle.effect !== 'still') ranges[0].end = Math.min(end, start + framesFor(timing.entrance + timing.middle, fps) + 1);
+  if (timing.exit) ranges.push({ start: Math.min(end - 1, start + Math.floor(timing.exitStart * fps)), end });
+  return ranges;
 }
 
 export function renderSceneProgress(timeline, prepared, encoded) {

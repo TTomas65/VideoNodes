@@ -1,40 +1,42 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pause, Play, RotateCcw } from 'lucide-react';
 
-export function usePlayback(duration, loop, autoplay, initialTime = 0) {
+export function usePlayback(duration, loop, autoplay, initialTime = 0, range = null) {
   const [time, setTime] = useState(initialTime);
   const [playing, setPlaying] = useState(autoplay);
   const position = useRef(initialTime);
+  const start = range?.start ?? 0;
+  const end = Math.min(duration, range?.end ?? duration);
 
-  function seek(value) {
-    position.current = Math.max(0, Math.min(duration, value));
+  function seek(value, limit = duration) {
+    position.current = Math.max(0, Math.min(limit, value));
     setTime(position.current);
   }
 
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || end <= start) return;
     let frame;
     let previous;
     function tick(now) {
       previous ??= now;
-      const elapsed = position.current + (now - previous) / 1000;
+      const elapsed = Math.max(start, position.current) + (now - previous) / 1000;
       previous = now;
-      const next = loop ? elapsed % duration : Math.min(duration, elapsed);
+      const next = loop ? start + (elapsed - start) % (end - start) : Math.min(end, elapsed);
       seek(next);
-      if (next < duration) frame = requestAnimationFrame(tick);
+      if (next < end) frame = requestAnimationFrame(tick);
       else setPlaying(false);
     }
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [duration, loop, playing]);
+  }, [duration, start, end, loop, playing]);
 
   function toggle() {
-    if (!playing && position.current >= duration) seek(0);
+    if (!playing && (position.current < start || position.current >= end)) seek(start);
     setPlaying(!playing);
   }
 
   function restart() {
-    seek(0);
+    seek(start);
     setPlaying(true);
   }
 

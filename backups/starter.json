@@ -12,7 +12,7 @@
     {
       "id": "background-1",
       "type": "background",
-      "position": { "x": 6, "y": 478 },
+      "position": { "x": 6, "y": 590 },
       "width": 294,
       "data": {
         "mode": "gradient",
@@ -39,7 +39,7 @@
       "type": "render",
       "position": { "x": 387, "y": 0 },
       "width": 404,
-      "data": { "resolution": "1920x1080", "fps": 30, "sceneDurations": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4], "format": "mp4", "crf": 20 }
+      "data": { "resolution": "1920x1080", "fps": 30, "sceneDurations": [null, null, null, null, null, null, null, null, null, null], "format": "mp4", "crf": 20 }
     },
     {
       "id": "video-1",

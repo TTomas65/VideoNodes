@@ -1,13 +1,16 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Pause, Play, RotateCcw, Type, X } from 'lucide-react';
+import { Palette, Pause, Play, RotateCcw, Type, X } from 'lucide-react';
 import { defaultBackground } from './background';
-import { basePlacement, captionAnchors, offsetLimit, readPlacement, rotationLimit } from './caption-format';
+import { basePlacement, captionAnchors, offsetLimit, readPlacement, rotationLimit, tiltLimit } from './caption-format';
 import { CaptionContent } from './caption-content';
+import { captionMotionFields, captionMotionOptions, captionPhaseRange, captionPhases, captionPosterTime, captionTiming, maxPhaseSeconds, phaseFor, phasePatch, readMotionTuning } from './caption-motion';
+import { PalettePanel } from './color-palette';
 import { Seconds } from './fields';
+import { FontPanel } from './font-picker';
 import { PlaybackButtons, usePlayback } from './playback';
 import { Preview } from './preview';
-import { defaults, effects, resolutions } from './project';
+import { defaults, resolutions } from './project';
 
 const previews = {
   ...defaultBackground,
@@ -46,27 +49,70 @@ function applyTemplate(template, content) {
 const samples = templates.map((template) => ({ ...template,
   caption: { ...defaults.text, ...applyTemplate(template, '') },
 }));
-const motionSamples = Object.entries(effects).map(([id, name]) => ({
-  id, name, caption: { ...defaults.text, text: 'Minta', effect: id, seconds: 1 },
-}));
+const phaseTabs = { entrance: 'Megjelenés', middle: 'Köztes', exit: 'Eltűnés' };
+const motionSamples = Object.fromEntries(Object.entries(captionPhases).map(([phase, { effects }]) => [
+  phase, Object.entries(effects).map(([id, name]) => {
+    const base = { ...defaults.text, text: id === 'lines' ? 'Első sor\nMásodik sor' : id === 'credits' ? 'Stábfelirat\nVideó · Zene' : 'Mintaszöveg',
+      effect: 'fade', seconds: 0.15 };
+    const caption = { ...base, ...phasePatch(base, phase, { effect: id, seconds: 1 }) };
+    return { id, name, caption };
+  }),
+]));
 const tabs = [{ key: 'templates', label: 'Sablonok' }, { key: 'motion', label: 'Mozgás' }, { key: 'placement', label: 'Pozíció' }];
 
-function MotionPane({ effect, duration, onEffect, onDuration }) {
-  const clock = usePlayback(2.2, true, () => !matchMedia('(prefers-reduced-motion: reduce)').matches);
+function MotionPane({ text, onChange, onTune, onPlayFull, onPlayEffect, clipTiming }) {
+  const [phase, setPhase] = useState('entrance');
+  const { effect, seconds, totalSeconds } = phaseFor(text, phase);
+  const clock = usePlayback(2.2, true, true);
   const time = Math.max(0, Math.min(1, clock.time - 0.16));
+  const fields = captionMotionFields(phase, effect);
+  const options = captionMotionOptions(text.motionTuning, phase, effect);
+  const playable = Boolean(text.text.trim());
+  const captions = useMemo(() => motionSamples[phase].map((sample) => ({
+    ...sample, caption: { ...sample.caption, motionTuning: text.motionTuning },
+  })), [phase, text.motionTuning]);
   return <>
+    <div className="caption-phase-tabs" role="group" aria-label="Animációs fázis">
+      {Object.entries(phaseTabs).map(([key, name]) => <button type="button" key={key} className="button" aria-pressed={phase === key}
+        onClick={() => { if (key !== phase) { setPhase(key); clock.restart(); } }}>{name}</button>)}
+    </div>
     <div className="caption-panel-bar"><h3>Animációminták</h3>
       <button type="button" className="icon-button" aria-label={clock.playing ? 'Mozgásminták szüneteltetése' : 'Mozgásminták lejátszása'}
         onClick={clock.toggle}>{clock.playing ? <Pause size={15} /> : <Play size={15} />}</button>
     </div>
+    <div className="caption-effect-controls">
+      <label className="field field-inline">Effekt hossza<Seconds label={`${captionPhases[phase].label} időtartama`}
+        value={seconds} max={maxPhaseSeconds} min={effect === 'none' ? 0 : 0.1} disabled={effect === 'none'}
+        onChange={(next) => { if (next !== seconds) onChange(phase, { seconds: next }); }} /></label>
+      {phase === 'middle' && <label className="field field-inline">Köztes teljes ideje
+        <Seconds label="Köztes teljes ideje" value={totalSeconds} min={seconds} max={maxPhaseSeconds} disabled={effect === 'none'}
+          onChange={(next) => { if (next !== totalSeconds) onChange(phase, { totalSeconds: next }); }} />
+      </label>}
+      {phase === 'middle' && totalSeconds > seconds &&
+        <p className="caption-timing-note">{displaySeconds(totalSeconds - seconds)} mp mozdulatlanul az effekt után</p>}
+      {Object.entries(fields).map(([key, { label, min, max, unit }]) => <label className="background-slider" key={key}>
+        <span>{label}<span>{options[key]}{unit}</span></span>
+        <input type="range" min={min} max={max} value={options[key]} aria-label={label}
+          onChange={(event) => onTune(phase, effect, key, Number(event.target.value))} />
+      </label>)}
+      <div className="caption-effect-actions">
+        <button type="button" className="button" disabled={!playable} onClick={onPlayFull}>
+          <Play size={14} fill="currentColor" aria-hidden="true" /> Teljes animáció
+        </button>
+        <button type="button" className="button" disabled={!playable || effect === 'none'} onClick={() => onPlayEffect(phase)}>
+          <Play size={14} fill="currentColor" aria-hidden="true" /> Effekt animáció
+        </button>
+      </div>
+      <p className="caption-timing-note">Teljes előnézet {displaySeconds(clipTiming.duration)} mp</p>
+    </div>
     <div className="caption-sample-grid">
-      {motionSamples.map(({ id, name, caption }) => <button type="button" key={id} aria-label={name} aria-pressed={effect === id}
-        onClick={() => onEffect(id)}>
-        <div aria-hidden="true"><Preview text={caption} settings={defaults.render} background={previews} size={208} time={time} /></div>
+      {captions.map(({ id, name, caption }) => <button type="button" key={`${phase}-${id}`} aria-label={name} aria-pressed={effect === id}
+        onClick={() => onChange(phase, { effect: id })}>
+        <div aria-hidden="true"><Preview text={caption} settings={defaults.render} background={previews} size={208}
+          time={phase === 'entrance' ? time : 0.15 + time} /></div>
         <span>{name}</span>
       </button>)}
     </div>
-    <label className="field field-inline caption-motion-duration">Animáció ideje<Seconds label="Animáció ideje" value={duration} max={10} onChange={onDuration} /></label>
   </>;
 }
 
@@ -79,9 +125,7 @@ function PositionSlider({ label, value, limit, unit, onChange }) {
 
 function PlacementPane({ placement, update, reset }) {
   return <div className="caption-position">
-    <div className="caption-panel-bar"><h3>Igazítás a képen</h3>
-      <button type="button" className="icon-button" aria-label="Pozíció alaphelyzetbe" title="Pozíció alaphelyzetbe" onClick={reset}><RotateCcw size={15} /></button>
-    </div>
+    <div className="caption-panel-bar"><h3>Igazítás a képen</h3></div>
     <div className="caption-anchor-grid" role="group" aria-label="Képernyőpozíció">
       {Object.entries(captionAnchors).map(([anchor, { label, align, vertical }]) => <button type="button" key={anchor} aria-label={label} title={label}
         aria-pressed={placement.anchor === anchor} onClick={() => update({ anchor })}
@@ -93,6 +137,8 @@ function PlacementPane({ placement, update, reset }) {
     <PositionSlider label="Vízszintes eltolás" value={placement.x} limit={offsetLimit} unit="%" onChange={(x) => update({ x })} />
     <PositionSlider label="Függőleges eltolás" value={placement.y} limit={offsetLimit} unit="%" onChange={(y) => update({ y })} />
     <PositionSlider label="Elforgatás" value={placement.rotation} limit={rotationLimit} unit="°" onChange={(rotation) => update({ rotation })} />
+    <PositionSlider label="Perspektíva" value={placement.tilt ?? 0} limit={tiltLimit} unit="°" onChange={(tilt) => update({ tilt })} />
+    <button type="button" className="button" onClick={reset}><RotateCcw size={15} /> Alaphelyzetbe állítás</button>
   </div>;
 }
 
@@ -103,16 +149,24 @@ export default function CaptionEditor({ text, settings, background, onApply, onC
   const editor = useRef(null);
   const title = useId();
   const [tab, setTab] = useState('templates');
+  const [formatEdit, setFormatEdit] = useState(null);
+  const [effectPhase, setEffectPhase] = useState(null);
+  const pickerHeading = useRef(null);
   const [draft, setDraft] = useState(() => ({ ...text, runs: text.runs ?? [], placement: text.placement ?? basePlacement }));
-  const playback = usePlayback(draft.seconds, false, false, draft.seconds);
+  const timing = captionTiming(draft);
+  const effectRange = effectPhase ? captionPhaseRange(timing, effectPhase) : null;
+  const playback = usePlayback(timing.duration, false, false, captionPosterTime(draft, timing), effectRange);
+  const playbackStart = effectRange?.start ?? 0;
+  const playbackEnd = effectRange?.end ?? timing.duration;
   const caption = useMemo(() => ({ ...draft, placement: readPlacement(draft.placement) }), [draft]);
+  const previewCaption = useMemo(() => formatEdit?.runs ? { ...caption, runs: formatEdit.runs } : caption, [caption, formatEdit]);
   const resolution = resolutions[settings.resolution];
 
   useEffect(() => { dialog.current.showModal(); }, []);
 
   function setTemplate(template) {
     const next = applyTemplate(template, draft.text);
-    editor.current?.replace(next.text, next.runs);
+    editor.current?.replace(next.text, next.runs, draft.alignments);
     setDraft((current) => ({ ...current, placement: next.placement }));
   }
 
@@ -120,14 +174,69 @@ export default function CaptionEditor({ text, settings, background, onApply, onC
     setDraft((current) => ({ ...current, placement: { ...current.placement, ...patch } }));
   }
 
-  function updateEffect(effect) {
-    setDraft((current) => ({ ...current, effect }));
-    playback.restart();
+  function chooseTab(next) {
+    if (formatEdit) finishFormat(null, false);
+    setTab(next);
+    if (next === 'placement' && !playback.playing && playback.time === timing.duration && (timing.exit || draft.effect === 'credits')) {
+      playback.seek(captionPosterTime(draft, timing));
+    }
   }
 
-  function updateDuration(seconds) {
-    setDraft((current) => ({ ...current, seconds }));
-    playback.restart();
+  function openFormat(property, initial) {
+    setTab('templates');
+    setFormatEdit({ property, initial });
+    setEffectPhase(null);
+    playback.setPlaying(false);
+    if (draft.effect === 'credits' || playback.time < timing.entrance || timing.exit && playback.time >= timing.exitStart) {
+      playback.seek(captionPosterTime(draft, timing));
+    }
+    requestAnimationFrame(() => {
+      const panel = pickerHeading.current;
+      panel?.focus({ preventScroll: true });
+      if (matchMedia('(max-width: 850px)').matches) panel?.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function previewFormat(candidate) {
+    const runs = editor.current?.previewFormat(candidate);
+    setFormatEdit((current) => current && { ...current, candidate, runs });
+  }
+
+  function finishFormat(value, restoreFocus = true) {
+    editor.current?.finishFormat(value, restoreFocus);
+    setFormatEdit(null);
+    setTab('templates');
+  }
+
+  function playFull() {
+    setEffectPhase(null);
+    playback.seek(0);
+    playback.setPlaying(true);
+  }
+
+  function playEffect(phase) {
+    setEffectPhase(phase);
+    playback.seek(captionPhaseRange(timing, phase).start);
+    playback.setPlaying(true);
+  }
+
+  function updatePhase(phase, patch) {
+    const next = { ...draft, ...phasePatch(draft, phase, patch) };
+    setDraft(next);
+    setEffectPhase(null);
+    const timing = captionTiming(next);
+    const { start } = captionPhaseRange(timing, phase);
+    playback.seek(phaseFor(next, phase).effect === 'none' ? captionPosterTime(next, timing) : start, timing.duration);
+    playback.setPlaying(phaseFor(next, phase).effect !== 'none');
+  }
+
+  function updateTuning(phase, effect, key, value) {
+    setDraft((current) => {
+      const options = current.motionTuning ?? {};
+      const group = options[phase] ?? {};
+      const motionTuning = readMotionTuning({ ...options, [phase]: { ...group, [effect]: { ...group[effect], [key]: value } } });
+      return { ...current, motionTuning };
+    });
   }
 
   function tabKeys(event) {
@@ -136,53 +245,67 @@ export default function CaptionEditor({ text, settings, background, onApply, onC
     event.preventDefault();
     const index = tabs.findIndex(({ key }) => key === tab);
     const next = step ? (index + step + tabs.length) % tabs.length : event.key === 'Home' ? 0 : tabs.length - 1;
-    setTab(tabs[next].key);
+    chooseTab(tabs[next].key);
     event.currentTarget.querySelectorAll('button')[next].focus();
   }
 
   return createPortal(<dialog ref={dialog} className="gradient-dialog caption-editor" aria-labelledby={title}
+    onCancel={(event) => { if (formatEdit) { event.preventDefault(); finishFormat(null); } }}
     onClose={onClose} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
     <header className="gradient-header">
       <Type size={19} /><h2 id={title}>Szövegek szerkesztése</h2>
       <button type="button" className="icon-button" aria-label="Szövegszerkesztő bezárása" onClick={() => dialog.current.close()}><X size={18} /></button>
     </header>
-    <div className="gradient-workspace caption-workspace">
+    <div className={`gradient-workspace caption-workspace${formatEdit ? ' caption-format-active' : ''}`}>
       <div className="caption-main">
         <section className="caption-monitor" aria-label="Felirat előnézete">
-          <div className="gradient-preview-bar"><strong>Felirat előnézete</strong><span>{resolution.width} × {resolution.height}</span></div>
+          <div className="gradient-preview-bar"><strong>{effectPhase ? captionPhases[effectPhase].effects[phaseFor(draft, effectPhase).effect] : 'Felirat előnézete'}</strong>
+            <span>{resolution.width} × {resolution.height}</span></div>
           <div className="gradient-surface caption-stage">
-            <Preview text={caption} settings={settings} time={playback.time} background={background} size={976} label="Felirat a videóban" />
+            <Preview text={previewCaption} settings={settings} time={playback.time} duration={timing.duration} background={background} size={976} label="Felirat a videóban" />
           </div>
           <div className="gradient-preview-footer caption-playback">
             <PlaybackButtons playback={playback} />
-            <input type="range" aria-label="Felirat-előnézet pozíciója" min="0" max={draft.seconds} step="0.001" value={playback.time}
+            <input type="range" aria-label="Felirat-előnézet pozíciója" min={playbackStart} max={playbackEnd} step="any" value={playback.time}
               onChange={(event) => { playback.setPlaying(false); playback.seek(Number(event.target.value)); }} />
-            <span className="transition-time">{displaySeconds(playback.time)} / {displaySeconds(draft.seconds)} mp</span>
+            <span className="transition-time">{displaySeconds(playback.time - playbackStart)} / {displaySeconds(playbackEnd - playbackStart)} mp</span>
           </div>
         </section>
-        <CaptionContent value={draft} controller={editor} onChange={(content) => setDraft((current) => ({ ...current, ...content }))} />
+        <CaptionContent value={draft} controller={editor} formatEdit={formatEdit} pickerId={`${title}-picker`}
+          onFormatOpen={openFormat} onChange={(content) => setDraft((current) => ({ ...current, ...content }))} />
       </div>
       <aside className="caption-sidebar">
         <div className="caption-tabs" role="tablist" aria-label="Felirat beállításai" onKeyDown={tabKeys}>
           {tabs.map(({ key, label }) => <button key={key} id={`${title}-${key}`} role="tab" type="button" tabIndex={tab === key ? 0 : -1}
-            aria-selected={tab === key} aria-controls={`${title}-panel`} onClick={() => setTab(key)}>{label}</button>)}
+            aria-selected={tab === key} aria-controls={`${title}-panel`} onClick={() => chooseTab(key)}>{label}</button>)}
         </div>
-        <div className="caption-panel" id={`${title}-panel`} role="tabpanel" aria-labelledby={`${title}-${tab}`} tabIndex={0}>
-          {tab === 'templates' && <div className="caption-sample-grid">
+        <div className={formatEdit ? `caption-picker ${formatEdit.property === 'font' ? 'caption-font-panel' : 'caption-palette'}` : 'caption-panel'}
+          id={`${title}-panel`} role="tabpanel" aria-labelledby={`${title}-${tab}`} tabIndex={0}>
+          {formatEdit?.property === 'font' && <>
+            <h3 id={`${title}-picker`} ref={pickerHeading} tabIndex={-1}><Type size={15} /> Betűtípus</h3>
+            <FontPanel value={formatEdit.initial} selectedValue={formatEdit.candidate ?? formatEdit.initial}
+              onPreview={previewFormat} onApply={() => finishFormat(formatEdit.candidate)} onCancel={() => finishFormat(null)} />
+          </>}
+          {formatEdit?.property === 'color' && <>
+            <h3 id={`${title}-picker`} ref={pickerHeading} tabIndex={-1}><Palette size={15} /> Színpaletta</h3>
+            <PalettePanel value={formatEdit.initial} onPreview={previewFormat} onApply={finishFormat} onCancel={() => finishFormat(null)} />
+          </>}
+          {!formatEdit && tab === 'templates' && <div className="caption-sample-grid">
             {samples.map((template) => <button type="button" key={template.id} aria-label={template.label} onClick={() => setTemplate(template)}>
               <div aria-hidden="true"><Preview text={template.caption} settings={defaults.render} background={previews} size={240} time={template.caption.seconds} /></div>
               <span>{template.label}</span>
             </button>)}
           </div>}
-          {tab === 'motion' && <MotionPane effect={draft.effect} duration={draft.seconds} onEffect={updateEffect} onDuration={updateDuration} />}
+          {tab === 'motion' && <MotionPane text={draft} onChange={updatePhase} onTune={updateTuning} clipTiming={timing}
+            onPlayFull={playFull} onPlayEffect={playEffect} />}
           {tab === 'placement' && <PlacementPane placement={draft.placement} update={updatePlacement}
-            reset={() => setDraft((current) => ({ ...current, placement: basePlacement }))} />}
+            reset={() => updatePlacement({ x: 0, y: 0, rotation: 0, tilt: 0 })} />}
         </div>
       </aside>
     </div>
-    <footer className="gradient-footer">
+    {!formatEdit && <footer className="gradient-footer">
       <button type="button" className="button" onClick={() => dialog.current.close()}>Mégse</button>
       <button type="button" className="button primary" onClick={() => { onApply(caption); dialog.current.close(); }}>Alkalmazás</button>
-    </footer>
+    </footer>}
   </dialog>, document.body);
 }

@@ -1,12 +1,41 @@
 import { hexColor, range } from './background';
+import { readCaptionFont } from './caption-fonts';
 
-export const captionFonts = ['Inter', 'Arial', 'Georgia', 'Verdana', 'Courier New', 'Trebuchet MS'];
-export const maxCaptionLength = 1200;
+export const maxCaptionLength = 20000;
 export const captionSize = { min: 20, max: 320, default: 171 };
 export const captionWeight = 650;
 export const basePlacement = { anchor: 'center', x: 0, y: 0, rotation: 0 };
 export const offsetLimit = 40;
 export const rotationLimit = 380;
+export const tiltLimit = 80;
+export const captionAlignments = { left: 'Balra igazítás', center: 'Középre igazítás', right: 'Jobbra igazítás', justify: 'Sorkitöltés' };
+
+export const readAlignment = (value) => Object.hasOwn(captionAlignments, value) ? value : null;
+
+export function readCaptionAlignments(value, lineCount) {
+  if (!value || typeof value !== 'object') return {};
+  return Object.fromEntries(Object.entries(value).filter(([index, align]) =>
+    /^(0|[1-9]\d*)$/.test(index) && Number(index) < lineCount && readAlignment(align)));
+}
+
+export function rebaseCaptionAlignments(previous, next, alignments) {
+  if (!alignments || previous === next) return alignments;
+  const before = previous.split('\n');
+  const after = next.split('\n');
+  let start = 0;
+  let oldEnd = before.length;
+  let newEnd = after.length;
+  while (start < Math.min(oldEnd, newEnd) && before[start] === after[start]) start += 1;
+  while (oldEnd > start && newEnd > start && before[oldEnd - 1] === after[newEnd - 1]) {
+    oldEnd -= 1;
+    newEnd -= 1;
+  }
+  return Object.fromEntries(after.flatMap((_, index) => {
+    const source = index < start ? index : index >= newEnd ? oldEnd + index - newEnd : Math.min(index, oldEnd - 1);
+    const align = alignments[source];
+    return align ? [[index, align]] : [];
+  }));
+}
 
 export const captionAnchors = {
   'top-left': { label: 'Bal felső', align: -1, vertical: -1 },
@@ -20,14 +49,14 @@ export const captionAnchors = {
   'bottom-right': { label: 'Jobb alsó', align: 1, vertical: 1 },
 };
 
-export const captionFontFamily = (font) => font === 'Inter' ? '"Inter Variable", Inter, sans-serif' : `"${font}", sans-serif`;
 const segmenter = new Intl.Segmenter('hu', { granularity: 'grapheme' });
 export const graphemeSegments = (text) => segmenter.segment(text);
 
 export function readRunStyle(value) {
   const style = {};
   if (!value || typeof value !== 'object') return style;
-  if (captionFonts.includes(value.font)) style.font = value.font;
+  const font = readCaptionFont(value.font);
+  if (font) style.font = font;
   const color = hexColor(value.color, null);
   if (color) style.color = color;
   if (Number.isFinite(value.size)) style.size = Math.round(range(value.size, captionSize.min, captionSize.max, captionSize.default));
@@ -65,7 +94,9 @@ export function readPlacement(value) {
   const x = range(value.x, -offsetLimit, offsetLimit, 0);
   const y = range(value.y, -offsetLimit, offsetLimit, 0);
   const rotation = range(value.rotation, -rotationLimit, rotationLimit, 0);
-  return anchor === basePlacement.anchor && x === 0 && y === 0 && rotation === 0 ? null : { anchor, x, y, rotation };
+  const tilt = range(value.tilt, -tiltLimit, tiltLimit, 0);
+  return anchor === basePlacement.anchor && x === 0 && y === 0 && rotation === 0 && !tilt
+    ? null : { anchor, x, y, rotation, ...(tilt && { tilt }) };
 }
 
 export function rebaseTextRuns(previous, next, runs) {

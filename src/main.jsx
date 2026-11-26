@@ -3,11 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { addEdge, Background, MiniMap, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow } from '@xyflow/react';
 import { Activity, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, ChevronRight, CircleHelp, Command, FileVideo, Focus, Folder, Grid3X3, History, Layers3, LayoutGrid, LayoutTemplate, Minus, PanelLeft, PanelRight, Play, Plus, Save, Search, Settings2, Terminal, Trash2, X } from 'lucide-react';
 import '@fontsource-variable/inter';
+import '@fontsource-variable/inter/wght-italic.css';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
 import brandIcon from '../ikons/ikon02.png';
 import { descriptions, edgeTypes, GraphContext, NodeIcon, nodeTypes } from './nodes';
-import { canConnect, cardWidths, defaults, edgeType, effects, formats, imageDataSize, label, makeExample, makeNode, maxCardWidth, minCardWidths, readProject, renderSources, resolutions, scenePorts, serialize } from './project';
+import { canConnect, cardWidths, defaults, edgeType, formats, imageDataSize, label, makeExample, makeNode, maxCardWidth, minCardWidths, readProject, renderSources, resolutions, scenePorts, serialize } from './project';
+import { captionPhases, phaseFor } from './caption-motion';
 import { maxProjectImageData, usableBackground } from './background';
 import { getInitialProject, saveProject } from './project-storage';
 import { captureWorkspace } from './backups';
@@ -19,7 +21,7 @@ const time = () => new Intl.DateTimeFormat('hu', { hour: '2-digit', minute: '2-d
 const fileStem = (title) => title.trim().replace(/[^\p{L}\p{N} _-]+/gu, '-').replace(/\s+/g, '-') || 'present-fflow';
 const log = (message, kind = 'info', area = 'Projekt') => ({ id: crypto.randomUUID(), at: time(), message, kind, area });
 const nodeKinds = Object.keys(label);
-const cardHeights = { text: 452, background: 335, transition: 290, render: 720, video: 500 };
+const cardHeights = { text: 557, background: 335, transition: 290, render: 720, video: 500 };
 const starterFit = { padding: { top: '8%', right: '5%', bottom: '4%', left: '4%' }, maxZoom: 1 };
 const sceneSignature = (id, nodes, edges) => {
   const render = nodes.find((node) => node.id === id && node.type === 'render');
@@ -418,7 +420,8 @@ function App({ project }) {
         </div></details>
         <details open><summary><Layers3 size={15} /> Kijelölés <ChevronDown size={14} /></summary><div className="detail-body">
           {selected ? <><div className="selected-node"><NodeIcon type={selected.type} /><strong>{label[selected.type]}</strong></div>
-            {selected.type === 'text' && <div className="detail-row"><span>Animáció</span><span>{effects[selected.data.effect]}</span></div>}
+            {selected.type === 'text' && Object.entries(captionPhases).map(([phase, { label, effects }]) =>
+              <div className="detail-row" key={phase}><span>{label}</span><span>{effects[phaseFor(selected.data, phase).effect]}</span></div>)}
             {selected.type === 'transition' && <div className="detail-row"><span>Váltási effekt</span><span>{transitionEffects[selected.data.effect]}</span></div>}
             {selected.type === 'render' && <div className="detail-row"><span>Felbontás</span><span>{resolutions[selected.data.resolution].label}</span></div>}
             <button className="detail-delete" type="button" onClick={() => deleteNode(selected.id)}><Trash2 size={14} /> Kártya törlése</button></>

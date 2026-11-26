@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Image, ImagePlus, Palette, Pause, Play, Plus, Trash2, X } from 'lucide-react';
 import { gradientMotion, gradientShapes, imageFits, prepareImage, presets } from './background';
-import { Color, Seconds, Select } from './fields';
+import { Color, GradientPalette, Seconds, Select } from './fields';
 import { Preview } from './preview';
 import { resolutions } from './project';
 
@@ -141,7 +141,11 @@ function GradientDialog({ value, settings, onApply, onClose }) {
               : <Slider label={draft.shape === 'lights' ? `${index}. fény mérete` : `${index + 1}. szín helye`} value={at} onChange={(next) => editStop(index, 'at', next)} />}
             <button type="button" className="icon-button" aria-label={`${index + 1}. szín törlése`} disabled={draft.stops.length <= 2} onClick={() => set('stops', draft.stops.filter((_, i) => i !== index))}><X size={14} /></button>
           </div>)}
-          <button type="button" className="button add-gradient-color" disabled={draft.stops.length >= 5} onClick={addStop}><Plus size={14} /> Szín hozzáadása</button>
+          <div className="gradient-color-actions">
+            <button type="button" className="button add-gradient-color" disabled={draft.stops.length >= 5} onClick={addStop}><Plus size={14} /> Szín hozzáadása</button>
+            <GradientPalette value={{ ...draft, stops: [...draft.stops].sort((a, b) => a.at - b.at) }}
+              onChange={(next) => setDraft((old) => ({ ...old, ...next }))} />
+          </div>
         </section>
         <section><h3>Forma</h3>
           <label className="field">Színátmenet típusa<Select aria-label="Színátmenet típusa" value={draft.shape} onChange={(event) => set('shape', event.target.value)}>

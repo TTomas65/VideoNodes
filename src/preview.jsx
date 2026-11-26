@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { backgroundImageSources, loadImage } from './background';
 import { resolutions } from './project';
 import { makeScene, makeTimelineScene } from './scene';
+import { loadCaptionFonts } from './caption-fonts';
 
 const emptyImages = new Map();
 
-export function Preview({ text, timeline, settings, background, time, size, label = 'Animáció előnézete' }) {
+export function Preview({ text, timeline, settings, background, time, duration, size, label = 'Animáció előnézete' }) {
   const canvas = useRef(null);
   const draw = useRef(null);
   const latestTime = useRef(time);
@@ -28,15 +29,15 @@ export function Preview({ text, timeline, settings, background, time, size, labe
     const update = () => {
       draw.current = timeline
         ? makeTimelineScene(canvas.current, timeline, images)
-        : makeScene(canvas.current, text, background, images.get(background?.image?.src));
+        : makeScene(canvas.current, text, background, images.get(background?.image?.src), duration);
       draw.current(latestTime.current);
     };
     update();
     if (!text && !timeline?.scenes.length) return;
     let alive = true;
-    document.fonts.ready.then(() => { if (alive) update(); });
+    loadCaptionFonts(timeline ? timeline.scenes.map((scene) => scene.text) : [text]).then(() => { if (alive) update(); });
     return () => { alive = false; };
-  }, [text, timeline, settings, background, images, width, height]);
+  }, [text, timeline, settings, background, images, duration, width, height]);
 
   useEffect(() => { latestTime.current = time; draw.current?.(time); }, [time]);
   return <canvas ref={canvas} width={width} height={height} aria-label={label} />;
