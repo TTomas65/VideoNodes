@@ -1,9 +1,10 @@
 import { movingBackground, paintBackground, usableBackground } from './background';
 import { sceneAt, sceneTime } from './timeline';
 import { drawTransition } from './transitions';
+import { graphemeSegments } from './caption-format';
+import { layoutCaption } from './caption-layout';
 
-const segmenter = new Intl.Segmenter('hu', { granularity: 'grapheme' });
-const graphemes = (text) => Array.from(segmenter.segment(text), ({ segment }) => segment);
+const graphemes = (text) => Array.from(graphemeSegments(text), ({ segment }) => segment);
 const ease = (value) => 1 - (1 - value) ** 3;
 
 function wrap(ctx, text, maxWidth) {
@@ -52,10 +53,7 @@ function prepareBackdrop(canvas, background, image) {
   return () => context.drawImage(backdrop, 0, 0);
 }
 
-function prepareText(canvas, text) {
-  const { width, height } = canvas;
-  const context = canvas.getContext('2d');
-
+function layoutPlainText(context, text, width, height) {
   const family = text.font === 'Inter' ? '"Inter Variable", sans-serif' : `"${text.font}", sans-serif`;
   const font = (size) => `650 ${size}px ${family}`;
   let size = Math.min(width * 0.092, height * 0.158);
@@ -69,19 +67,49 @@ function prepareText(canvas, text) {
   const clusters = text.effect === 'type' ? lines.map(graphemes) : [];
   const count = clusters.reduce((sum, line) => sum + line.length, 0);
   const lineHeight = size * 1.15;
+  context.font = font(size);
+  const centers = lines.map((line) => -context.measureText(line).width / 2);
+  return {
+    x: width / 2, y: height / 2, rotation: 0, fontSize: size,
+    wipe: [-width * 0.415, -height / 2, width * 0.83, height],
+    draw(progress) {
+      context.font = font(size);
+      context.textAlign = 'left';
+      context.textBaseline = 'middle';
+      context.fillStyle = text.color;
+      let visible = Math.floor(progress * count);
+      lines.forEach((line, index) => {
+        const fragment = text.effect === 'type' ? clusters[index].slice(0, Math.max(0, visible)).join('') : line;
+        if (text.effect === 'type') visible -= clusters[index].length;
+        context.fillText(fragment, centers[index], (index - (lines.length - 1) / 2) * lineHeight);
+      });
+    },
+  };
+}
+
+function prepareText(canvas, text) {
+  const { width, height } = canvas;
+  const context = canvas.getContext('2d');
+  const layout = text.runs?.length || text.placement ? layoutCaption(context, text, width, height) : layoutPlainText(context, text, width, height);
 
   return (time) => {
     const progress = Math.max(0, Math.min(1, time / text.seconds));
     const remaining = 1 - ease(progress);
     context.save();
-    context.translate(width / 2, height / 2);
+    context.translate(layout.x, layout.y);
+    if (layout.rotation) {
+      const [x, y] = layout.pivot;
+      context.translate(x, y);
+      context.rotate(layout.rotation);
+      context.translate(-x, -y);
+    }
     switch (text.effect) {
       case 'slide':
         context.translate(-width * 0.34 * remaining, 0);
         context.globalAlpha = 1 - remaining;
         break;
       case 'fog':
-        context.filter = `blur(${size * 0.37 * remaining}px)`;
+        context.filter = `blur(${layout.fontSize * 0.37 * remaining}px)`;
         context.globalAlpha = progress ** 1.3;
         break;
       case 'bounce':
@@ -97,22 +125,15 @@ function prepareText(canvas, text) {
         context.globalAlpha = 1 - remaining;
         break;
       }
-      case 'wipe':
+      case 'wipe': {
+        const [left, top, extent, height] = layout.wipe;
         context.beginPath();
-        context.rect(-width * 0.415, -height / 2, width * 0.83 * ease(progress), height);
+        context.rect(left, top, extent * ease(progress), height);
         context.clip();
         break;
+      }
     }
-    context.font = font(size);
-    context.textAlign = 'left';
-    context.textBaseline = 'middle';
-    context.fillStyle = text.color;
-    let visible = Math.floor(progress * count);
-    lines.forEach((line, index) => {
-      const fragment = text.effect === 'type' ? clusters[index].slice(0, Math.max(0, visible)).join('') : line;
-      if (text.effect === 'type') visible -= clusters[index].length;
-      context.fillText(fragment, -context.measureText(line).width / 2, (index - (lines.length - 1) / 2) * lineHeight);
-    });
+    layout.draw(progress);
     context.restore();
   };
 }

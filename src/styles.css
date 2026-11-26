@@ -487,8 +487,8 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
 .add-gradient-color { min-height: 28px; justify-self: start; font-size: 11px; }
 .gradient-footer { justify-content: flex-end; border-top: 1px solid #ffffff23; }
 
-.transition-node-actions { display: grid; gap: 7px; }
-.transition-node-actions .button { min-height: 32px; font-size: 12px; }
+.node-dialog-actions { display: grid; gap: 7px; }
+.node-dialog-actions .button { min-height: 32px; font-size: 12px; }
 .transition-preview-dialog { width: min(860px, calc(100% - 28px)); }
 .transition-preview-dialog .transition-preview-footer {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 12px;
@@ -519,6 +519,76 @@ kbd { display: inline-block; font: 11px 'Inter Variable', sans-serif; white-spac
 .transition-effect-grid button span { padding: 5px 6px; font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; }
 .transition-tuning-title { display: flex; align-items: center; gap: 7px; color: #c9dcf0; }
 .transition-tuning-title h3 { flex: 1; }
+
+.caption-editor { width: min(1160px, calc(100% - 28px)); height: min(820px, calc(100dvh - 28px)); }
+.caption-workspace { grid-template-columns: minmax(0, 1fr) 368px; }
+.caption-main {
+  min-width: 0; min-height: 0; overflow: auto; padding: 15px; display: grid; align-content: start; gap: 14px;
+  background: url('/grain.png'), radial-gradient(ellipse at 30% 8%, #353b44, #22262e 72%);
+}
+.caption-stage { height: min(36dvh, 330px); }
+.caption-playback input[type='range'] { width: 100%; min-width: 0; margin: 0; accent-color: #acd5f2; cursor: pointer; }
+.caption-compose { display: grid; gap: 8px; padding: 10px; border: 1px solid #a8b5c445; border-radius: 8px; background: #242832; }
+.caption-formats { display: grid; grid-template-columns: minmax(92px, 1fr) minmax(70px, 112px) minmax(82px, 112px) auto; align-items: end; gap: 8px; }
+.caption-formats .unit-field, .caption-formats .color-field { min-height: 31px; }
+.caption-formats .color-field { width: 100%; }
+.caption-format-buttons { display: flex; gap: 4px; }
+.caption-format-buttons .icon-button { height: 31px; width: 31px; border-color: #ffffff24; background: #1b1f28; }
+.caption-format-buttons .icon-button[aria-pressed='true'] { background: #40536e; color: #ecf6ff; border-color: #a7cae5; }
+.caption-content {
+  min-width: 0; min-height: 112px; max-height: min(26dvh, 230px); overflow: auto;
+  background: #171b24; border: 1px solid #ffffff28; border-radius: 6px;
+  font-size: clamp(18px, 2.15vw, 29px); line-height: 1.26;
+}
+.caption-content:focus-within { border-color: #a4c9ea; box-shadow: 0 0 0 1px #a4c9ea25; }
+.caption-content .ProseMirror { min-height: 110px; padding: 11px 12px; outline: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.caption-content .ProseMirror p { margin: 0; }
+.caption-content .caption-selection { background-color: #416b9aac; }
+.caption-count { color: #a9b8cd; text-align: right; min-height: 15px; font-size: 11px; }
+.caption-sidebar { min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); border-left: 1px solid #ffffff25; background: #25282f; }
+.caption-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; padding: 10px 12px; border-bottom: 1px solid #ffffff22; background: #2c313a; }
+.caption-tabs button {
+  min-height: 35px; padding: 3px 5px; border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: #b5c2d5; font-size: 12px; font-weight: 630;
+}
+.caption-tabs button:hover, .caption-tabs button[aria-selected='true'] { border-color: #a8c7e088; background: #465267; color: #f2f7ff; }
+.caption-panel { overflow: auto; padding: 12px; }
+.caption-sample-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.caption-sample-grid button {
+  display: grid; align-content: start; min-width: 0; overflow: hidden; padding: 0; border: 1px solid #758194;
+  border-radius: 7px; color: #e2ebfa; background: #343a46; text-align: left;
+}
+.caption-sample-grid button:hover, .caption-sample-grid button[aria-pressed='true'] { border-color: #a8d4ed; background: #425065; }
+.caption-sample-grid button span { padding: 7px 8px; font-size: 11px; }
+.caption-sample-grid canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; border-bottom: 1px solid #ffffff2b; background: #141925; }
+.caption-panel-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; margin-bottom: 6px; }
+.caption-panel-bar h3 { margin: 0; color: #d9e5f5; font-size: 13px; font-weight: 650; }
+.caption-motion-duration { margin-top: 13px; }
+.caption-position { display: grid; gap: 12px; }
+.caption-position .caption-panel-bar { margin: 0; }
+.caption-anchor-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 4px; }
+.caption-anchor-grid button {
+  display: grid; justify-items: center; align-items: center; gap: 6px; min-width: 0; min-height: 64px; padding: 5px 1px;
+  border: 1px solid #667489; border-radius: 6px; background: #303744; color: #d4dfef; font-size: 10px;
+}
+.caption-anchor-grid button[aria-pressed='true'], .caption-anchor-grid button:hover { border-color: #a8d4ed; background: #46566d; color: #f5f8ff; }
+.caption-anchor-frame { position: relative; display: block; width: 37px; height: 23px; border: 1px solid #9aadc9; border-radius: 3px; background: #172030; }
+.caption-anchor-frame::after {
+  content: ''; position: absolute; left: var(--anchor-x); top: var(--anchor-y); width: 9px; height: 5px;
+  transform: translate(-50%, -50%); border-radius: 2px; background: #c4e4fa;
+}
+@media (max-width: 850px) {
+  .caption-workspace { display: block; overflow: auto; }
+  .caption-main, .caption-panel { overflow: visible; }
+  .caption-sidebar { display: block; border-left: 0; border-top: 1px solid #ffffff25; }
+  .caption-stage { height: min(28dvh, 260px); }
+}
+@media (max-width: 460px) {
+  .caption-main, .caption-panel { padding: 9px; }
+  .caption-main { gap: 9px; }
+  .caption-formats { grid-template-columns: minmax(88px, 1fr) minmax(52px, 75px) minmax(76px, 91px); }
+  .caption-format-buttons { grid-column: 1 / -1; }
+}
 
 @media (max-width: 700px) {
   .gradient-workspace { display: block; overflow: auto; }

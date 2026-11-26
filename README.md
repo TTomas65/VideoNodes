@@ -23,6 +23,10 @@ Első megnyitáskor a mintában a Szöveg kártya az első jelenethez, a Hátté
 
 Kártyát kattintással vagy húzással adhatsz hozzá a kártyatárból. A jobb alsó sarok húzásával állíthatod a szélességét. A kimeneti csatlakozót húzd a következő kártya bemenetére. A vezeték fényes középső pontjára kattintva megjelenik a **Törlés** gomb. A `Delete` billentyű továbbra is törli a kijelölt kártyát vagy kapcsolatot.
 
+## Feliratok szerkesztése
+
+A **Szövegek szerkesztése** ablakban kijelölt betűkön vagy több soron külön állítható a betűtípus, a szín, a méret és a betűstílus. A méret a Full HD képkockához viszonyított pixelérték. A feliratsablonok a meglévő sorokat formázzák. Üres szövegnél a sablon mintaszövege töltődik be. A **Mozgás** fül animált mintákat mutat, a **Pozíció** fül kilenc igazítási pontot, vízszintes és függőleges eltolást, valamint ±380°-os forgatást kínál. Az **Alkalmazás** a kártyára teszi a módosításokat, a **Mentés** pedig a projektbe írja őket.
+
 ## Több jelenet egy videóban
 
 Kösd a Szöveg kártyákat az **FFmpeg render** kártya **Jelenet 01–10** bemeneteire, és a sorok mezőiben add meg az egyes jelenetek hosszát. Üres időmezőnél a szöveganimáció saját ideje érvényesül. Hosszabb jelenetben az elkészült felirat a jelenet végéig látható. Rövidebb jelenetnél a váltás megszakíthatja az animációt.

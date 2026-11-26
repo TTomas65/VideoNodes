@@ -8,8 +8,10 @@ import { Color, Seconds, Select } from './fields';
 import { Preview } from './preview';
 import { durationFor, makeTimeline, maxSceneSeconds } from './timeline';
 import { maxTransitionSeconds, transitionEffects } from './transitions';
+import { maxCaptionLength, rebaseTextRuns } from './caption-format';
 
 const TransitionDialog = lazy(() => import('./transition-dialog'));
+const CaptionEditor = lazy(() => import('./caption-editor'));
 
 export const GraphContext = createContext(null);
 export const typeIcons = { text: Type, background: Image, transition: Shuffle, render: Cog, video: Clapperboard };
@@ -62,11 +64,23 @@ function Card({ id, type, selected, children, input, output, sceneControls }) {
 function TextNode({ id, data, selected }) {
   const { updateNode, nodes, edges } = useContext(GraphContext);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const set = (key, value) => updateNode(id, key, value);
-  const linkedRender = previewOpen ? outgoingRender(id, nodes, edges) : undefined;
-  const background = previewOpen ? linkedBackground(id, nodes, edges) ?? linkedBackground(linkedRender?.id, nodes, edges) : undefined;
+  const showingPreview = previewOpen || editorOpen;
+  const linkedRender = showingPreview ? outgoingRender(id, nodes, edges) : undefined;
+  const background = showingPreview ? linkedBackground(id, nodes, edges) ?? linkedBackground(linkedRender?.id, nodes, edges) : undefined;
+  const settings = linkedRender?.data ?? defaults.render;
+
+  function setText(text) {
+    if (data.runs?.length) {
+      const runs = rebaseTextRuns(data.text, text, data.runs);
+      set('runs', runs.length ? runs : undefined);
+    }
+    set('text', text);
+  }
+
   return <Card id={id} type="text" selected={selected} output="Szöveg">
-    <label className="field">Tartalom<textarea rows={2} maxLength={360} value={data.text} placeholder="Írd be a szöveget…" onChange={(event) => set('text', event.target.value)} /></label>
+    <label className="field">Tartalom<textarea rows={2} maxLength={maxCaptionLength} value={data.text} placeholder="Írd be a szöveget…" onChange={(event) => setText(event.target.value)} /></label>
     <div className="fields-two text-style-fields">
       <label className="field">Betűtípus<Select value={data.font} onChange={(event) => set('font', event.target.value)}>{fonts.map((font) => <option key={font} value={font}>{font}</option>)}</Select></label>
       <label className="field">Szín<Color value={data.color} onChange={(value) => set('color', value)} /></label>
@@ -74,10 +88,22 @@ function TextNode({ id, data, selected }) {
     <div className="field-divider" />
     <label className="field"><span className="field-with-icon"><Blend size={13} /> Animáció</span><Select aria-label="Animáció" value={data.effect} onChange={(event) => set('effect', event.target.value)}>{Object.entries(effects).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</Select></label>
     <label className="field field-inline">Animáció ideje<Seconds value={data.seconds} max={10} onChange={(value) => set('seconds', value)} /></label>
-    <button type="button" className="button text-preview-button" aria-haspopup="dialog" disabled={!data.text.trim()} onClick={() => setPreviewOpen(true)}>
-      <Eye size={15} /> Előnézet
-    </button>
-    {previewOpen && <TextPreviewDialog text={data} settings={linkedRender?.data ?? defaults.render} background={background} onClose={() => setPreviewOpen(false)} />}
+    <div className="node-dialog-actions">
+      <button type="button" className="button text-preview-button" aria-haspopup="dialog" disabled={!data.text.trim()} onClick={() => setPreviewOpen(true)}>
+        <Eye size={15} /> Előnézet
+      </button>
+      <button type="button" className="button" aria-haspopup="dialog" onClick={() => setEditorOpen(true)}><Settings2 size={15} /> Szövegek szerkesztése</button>
+    </div>
+    {previewOpen && <TextPreviewDialog text={data} settings={settings} background={background} onClose={() => setPreviewOpen(false)} />}
+    {editorOpen && <Suspense fallback={null}>
+      <CaptionEditor text={data} settings={settings} background={background} onClose={() => setEditorOpen(false)} onApply={(caption) => {
+        set('text', caption.text);
+        set('runs', caption.runs.length ? caption.runs : undefined);
+        set('placement', caption.placement ?? undefined);
+        set('effect', caption.effect);
+        set('seconds', caption.seconds);
+      }} />
+    </Suspense>}
   </Card>;
 }
 
@@ -99,7 +125,7 @@ function TransitionNode({ id, data, selected }) {
     </Select></label>
     <label className="field field-inline">Átmenet időtartama<Seconds label="Átmenet időtartama" value={data.seconds} max={maxTransitionSeconds}
       onChange={(value) => updateNode(id, 'seconds', value)} /></label>
-    <div className="transition-node-actions">
+    <div className="node-dialog-actions">
       <button type="button" className="button" aria-haspopup="dialog" disabled={!hasText} title={hasText ? undefined : 'Köss ide egy kitöltött Szöveg kártyát'}
         onClick={() => setDialog('preview')}><Eye size={15} /> Előnézet</button>
       <button type="button" className="button" aria-haspopup="dialog" onClick={() => setDialog('editor')}><Settings2 size={15} /> Átmenetek szerkesztése</button>

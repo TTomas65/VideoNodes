@@ -1,6 +1,7 @@
 import { defaultBackground, hexColor, maxProjectImageData, range, readBackground } from './background';
 import { defaultSceneSeconds, framesFor, maxSceneSeconds } from './timeline';
 import { maxTransitionSeconds, readTransitionTuning, transitionEffects } from './transitions';
+import { captionFonts, maxCaptionLength, readPlacement, readTextRuns } from './caption-format';
 import starter from '../backups/starter.json';
 
 export const effects = {
@@ -8,7 +9,7 @@ export const effects = {
   fade: 'Halványból éles', zoom: 'Közelítés', type: 'Írógép', wipe: 'Sávos felfedés',
 };
 
-export const fonts = ['Inter', 'Arial', 'Georgia', 'Verdana', 'Courier New', 'Trebuchet MS'];
+export const fonts = captionFonts;
 export const resolutions = {
   '1280x720': { label: 'HD', width: 1280, height: 720 },
   '1920x1080': { label: 'Full HD', width: 1920, height: 1080 },
@@ -58,7 +59,7 @@ export function isLegacyExample(project) {
   const cardAt = (type, x, y) => project.nodes.find((node) => node.id === `${type}-1` && node.type === type
     && node.position.x === x && node.position.y === y);
   const text = cardAt('text', 0, 0);
-  if (!text || !cardAt('render', 306, 51) || !cardAt('video', 612, 24)) return false;
+  if (!text || text.data.runs?.length || text.data.placement || !cardAt('render', 306, 51) || !cardAt('video', 612, 24)) return false;
   return Object.entries(defaults.text).every(([key, value]) => text.data[key] === value)
     && project.edges.some(({ source, target, targetHandle }) => source === 'text-1' && target === 'render-1' && targetHandle === scenePorts[0].id)
     && project.edges.some(({ source, target, targetHandle }) => source === 'render-1' && target === 'video-1' && targetHandle == null);
@@ -127,13 +128,20 @@ export function readProject(value) {
     }, item.id);
     node.width = range(item.width, minCardWidths[item.type], maxCardWidth, cardWidths[item.type]);
     const data = item.data ?? {};
-    if (item.type === 'text') Object.assign(node.data, {
-      text: typeof data.text === 'string' ? data.text.slice(0, 360) : defaults.text.text,
-      font: fonts.includes(data.font) ? data.font : defaults.text.font,
-      color: hexColor(data.color, defaults.text.color),
-      effect: Object.hasOwn(effects, data.effect) ? data.effect : defaults.text.effect,
-      seconds: range(data.seconds, 0.1, 10, defaults.text.seconds),
-    });
+    if (item.type === 'text') {
+      const text = typeof data.text === 'string' ? data.text.slice(0, maxCaptionLength) : defaults.text.text;
+      const runs = readTextRuns(data.runs, text.length);
+      const placement = readPlacement(data.placement);
+      Object.assign(node.data, {
+        text,
+        font: fonts.includes(data.font) ? data.font : defaults.text.font,
+        color: hexColor(data.color, defaults.text.color),
+        effect: Object.hasOwn(effects, data.effect) ? data.effect : defaults.text.effect,
+        seconds: range(data.seconds, 0.1, 10, defaults.text.seconds),
+        ...(runs.length && { runs }),
+        ...(placement && { placement }),
+      });
+    }
     if (item.type === 'render') Object.assign(node.data, {
       resolution: Object.hasOwn(resolutions, data.resolution) ? data.resolution : defaults.render.resolution,
       fps: [24, 25, 30, 60].includes(data.fps) ? data.fps : defaults.render.fps,

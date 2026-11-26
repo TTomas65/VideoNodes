@@ -1,63 +1,15 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Eye, Pause, Play, RotateCcw, Settings2, Shuffle, X } from 'lucide-react';
+import { Eye, RotateCcw, Settings2, Shuffle, X } from 'lucide-react';
 import { Color, Seconds, Select } from './fields';
 import { Preview } from './preview';
 import { defaults, linkedBackground, outgoingRender, renderSources, scenePorts, upstream } from './project';
 import { makeTimeline } from './timeline';
+import { PlaybackButtons, usePlayback } from './playback';
 import { curveField, drawTransition, maxTransitionSeconds, transitionEffects, transitionFields, transitionOptions } from './transitions';
 
 const seconds = (value) => value.toLocaleString('hu-HU', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 const hold = 0.6;
-
-function usePlayback(duration, loop, autoplay) {
-  const [time, setTime] = useState(0);
-  const [playing, setPlaying] = useState(autoplay);
-  const position = useRef(0);
-
-  function seek(value) {
-    position.current = Math.max(0, Math.min(duration, value));
-    setTime(position.current);
-  }
-
-  useEffect(() => {
-    if (!playing) return;
-    let frame;
-    let previous;
-    function tick(now) {
-      previous ??= now;
-      const elapsed = position.current + (now - previous) / 1000;
-      previous = now;
-      const next = loop ? elapsed % duration : Math.min(duration, elapsed);
-      seek(next);
-      if (next < duration) frame = requestAnimationFrame(tick);
-      else setPlaying(false);
-    }
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [duration, loop, playing]);
-
-  function toggle() {
-    if (!playing && position.current >= duration) seek(0);
-    setPlaying(!playing);
-  }
-
-  function restart() {
-    seek(0);
-    setPlaying(true);
-  }
-
-  return { time: Math.min(time, duration), playing, setPlaying, seek, toggle, restart };
-}
-
-function PlaybackButtons({ playback }) {
-  return <div className="transition-playback-buttons">
-    <button type="button" className="icon-button" aria-label={playback.playing ? 'Szünet' : 'Lejátszás'} onClick={playback.toggle}>
-      {playback.playing ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
-    </button>
-    <button type="button" className="icon-button" aria-label="Újrajátszás" onClick={playback.restart}><RotateCcw size={15} /></button>
-  </div>;
-}
 
 function previewClip(id, nodes, edges) {
   const render = outgoingRender(id, nodes, edges);
