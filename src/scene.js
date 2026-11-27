@@ -170,15 +170,49 @@ function prepareText(canvas, text, timing = captionTiming(text)) {
       if (effect === 'wipe') {
         const covered = 1 - (1 - easing) ** exitAmount;
         clipWipe(covered, 1 - covered, outgoing.detail);
-      } else if (effect !== 'credits') context.globalAlpha = (1 - easing) ** (effect === 'fade' ? exitAmount : 1);
+      } else if (effect !== 'credits' && effect !== 'zoom-blur') {
+        context.globalAlpha = (1 - easing) ** (effect === 'fade' ? exitAmount : 1);
+      }
     }
     if (still) {
       context.globalAlpha *= centerAmount;
       if (middle.detail !== 100) scaleAroundPivot(middle.detail / 100);
     }
-    layout.draw(text.effect === 'type' ? progress ** entryAmount : progress, animation, motion, middle, scrollOffset);
+    const draw = () => layout.draw(text.effect === 'type' ? progress ** entryAmount : progress, animation, motion, middle, scrollOffset);
+    if (text.effect === 'zoom-blur' && linear < 1) drawZoomBlur(motionProgress(1 - linear, entrance.dynamics), entrance, draw);
+    else if (text.exit?.effect === 'zoom-blur' && exit) drawZoomBlur(exit, outgoing, draw);
+    else draw();
     context.restore();
   };
+
+  function drawZoomBlur(progress, options, draw) {
+    if (progress === 1) return;
+    const amount = options.intensity / 100;
+    const scale = 1 + (0.13 * progress + 1.04 * progress ** 3.4) * amount;
+    const fade = fraction(progress - 0.56, 0.44);
+    const opacity = context.globalAlpha * (1 - fade ** 2 * (3 - 2 * fade));
+    const blur = fraction(progress - 0.38, 0.62);
+    const strength = blur ** 2 * (3 - 2 * blur) * options.detail / 100;
+
+    if (strength > 0.01) {
+      // Smaller exposures trail the growing caption around its own pivot.
+      const count = 8;
+      const spread = Math.min(scale - 1, strength * amount * 0.82);
+      context.filter = `blur(${layout.fontSize * strength * 0.12}px)`;
+      for (let step = count; step >= 1; step -= 1) {
+        const distance = step / count;
+        context.save();
+        context.globalAlpha = opacity * Math.min(1, strength) * (1 - distance * 0.65) * 0.26;
+        scaleAroundPivot(scale - spread * distance);
+        draw();
+        context.restore();
+      }
+      context.filter = `blur(${layout.fontSize * strength * 0.065}px)`;
+    }
+    context.globalAlpha = opacity * (1 - Math.min(1, strength) * 0.84);
+    scaleAroundPivot(scale);
+    draw();
+  }
 
   function scaleAroundPivot(scale) {
     context.translate(pivotX, pivotY);

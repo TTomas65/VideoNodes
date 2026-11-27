@@ -1,6 +1,7 @@
 export const entranceEffects = {
   slide: 'Beúsztatás', fog: 'Ködből előtűnés', bounce: 'Bepattogás',
   fade: 'Halványból éles', zoom: 'Közelítés', type: 'Írógép', wipe: 'Sávos felfedés', credits: 'Stábfelirat-görgetés',
+  'zoom-blur': 'Élesedő kicsinyítés',
 };
 export const middleEffects = {
   none: 'Nincs', still: 'Statikus', wave: 'Hullámzás', lens: 'Nagyítólencse',
@@ -9,6 +10,7 @@ export const middleEffects = {
 export const exitEffects = {
   none: 'Nincs', fade: 'Elhalványulás', slide: 'Kiúsztatás', fog: 'Ködbe veszés',
   zoom: 'Összezsugorodás', lift: 'Felfelé elsuhanás', wipe: 'Sávos eltűnés', credits: 'Kigörgetés',
+  'zoom-blur': 'Elmosódó nagyítás',
 };
 export const captionPhases = {
   entrance: { label: 'Animáció megjelenés', effects: entranceEffects },
@@ -25,15 +27,16 @@ const amount = { label: 'Intenzitás', min: 20, max: 180, initial: 100, unit: '%
 const dynamics = { label: 'Dinamika', min: -100, max: 100, initial: 0, unit: '%' };
 const angle = (initial) => ({ label: 'Irány', min: 0, max: 359, initial, unit: '°' });
 const cycles = (label, initial, max) => ({ label, min: 1, max, initial });
+const zoomBlur = { label: 'Elmosódás', min: 0, max: 160, initial: 100, unit: '%' };
 const extras = {
-  entrance: { slide: angle(180), bounce: cycles('Pattanások', 3, 7), wipe: angle(0), credits: { ...amount, label: 'Betűméret' } },
+  entrance: { slide: angle(180), bounce: cycles('Pattanások', 3, 7), wipe: angle(0), credits: { ...amount, label: 'Betűméret' }, 'zoom-blur': zoomBlur },
   middle: {
     wave: cycles('Hullámok', 3, 8), lens: { label: 'Lencse szélessége', min: 2, max: 14, initial: 4, unit: ' betű' },
     shimmer: { label: 'Fénysáv szélessége', min: 2, max: 14, initial: 4, unit: ' betű' },
     lines: { label: 'Kiemelés szélessége', min: 30, max: 180, initial: 80, unit: '%' },
     breathe: cycles('Lélegzetek', 1, 6), float: cycles('Lebegések', 1, 6),
   },
-  exit: { slide: angle(0), lift: angle(270), wipe: angle(0), credits: { ...amount, label: 'Betűméret' } },
+  exit: { slide: angle(0), lift: angle(270), wipe: angle(0), credits: { ...amount, label: 'Betűméret' }, 'zoom-blur': zoomBlur },
 };
 
 export function captionMotionFields(phase, effect) {

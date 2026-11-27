@@ -11,6 +11,8 @@ import { FontPanel } from './font-picker';
 import { PlaybackButtons, usePlayback } from './playback';
 import { Preview } from './preview';
 import { defaults, resolutions } from './project';
+import { TextPresetPane } from './text-preset-pane';
+import { applyStylePreset } from './text-presets';
 
 const previews = {
   ...defaultBackground,
@@ -144,7 +146,7 @@ function PlacementPane({ placement, update, reset }) {
 
 const displaySeconds = (time) => time.toLocaleString('hu-HU', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 
-export default function CaptionEditor({ text, settings, background, onApply, onClose }) {
+export default function CaptionEditor({ text, width, settings, background, onApply, onClose }) {
   const dialog = useRef(null);
   const editor = useRef(null);
   const title = useId();
@@ -153,6 +155,7 @@ export default function CaptionEditor({ text, settings, background, onApply, onC
   const [effectPhase, setEffectPhase] = useState(null);
   const pickerHeading = useRef(null);
   const [draft, setDraft] = useState(() => ({ ...text, runs: text.runs ?? [], placement: text.placement ?? basePlacement }));
+  const [draftWidth, setDraftWidth] = useState(width);
   const timing = captionTiming(draft);
   const effectRange = effectPhase ? captionPhaseRange(timing, effectPhase) : null;
   const playback = usePlayback(timing.duration, false, false, captionPosterTime(draft, timing), effectRange);
@@ -168,6 +171,17 @@ export default function CaptionEditor({ text, settings, background, onApply, onC
     const next = applyTemplate(template, draft.text);
     editor.current?.replace(next.text, next.runs, draft.alignments);
     setDraft((current) => ({ ...current, placement: next.placement }));
+  }
+
+  function loadPreset(preset) {
+    const next = preset.kind === 'style' ? applyStylePreset(preset.caption, draft) : preset.caption;
+    const runs = next.runs ?? [];
+    editor.current?.replace(next.text, runs, next.alignments);
+    setDraft({ ...next, runs, placement: next.placement ?? basePlacement });
+    if (preset.kind === 'card') setDraftWidth(preset.width);
+    setEffectPhase(null);
+    playback.setPlaying(false);
+    playback.seek(captionPosterTime(next), captionTiming(next).duration);
   }
 
   function updatePlacement(patch) {
@@ -290,12 +304,14 @@ export default function CaptionEditor({ text, settings, background, onApply, onC
             <h3 id={`${title}-picker`} ref={pickerHeading} tabIndex={-1}><Palette size={15} /> Színpaletta</h3>
             <PalettePanel value={formatEdit.initial} onPreview={previewFormat} onApply={finishFormat} onCancel={() => finishFormat(null)} />
           </>}
-          {!formatEdit && tab === 'templates' && <div className="caption-sample-grid">
-            {samples.map((template) => <button type="button" key={template.id} aria-label={template.label} onClick={() => setTemplate(template)}>
-              <div aria-hidden="true"><Preview text={template.caption} settings={defaults.render} background={previews} size={240} time={template.caption.seconds} /></div>
-              <span>{template.label}</span>
-            </button>)}
-          </div>}
+          {!formatEdit && tab === 'templates' && <TextPresetPane caption={caption} width={draftWidth} onLoad={loadPreset}>
+            <div className="caption-sample-grid">
+              {samples.map((template) => <button type="button" key={template.id} aria-label={template.label} onClick={() => setTemplate(template)}>
+                <div aria-hidden="true"><Preview text={template.caption} settings={defaults.render} background={previews} size={240} time={template.caption.seconds} /></div>
+                <span>{template.label}</span>
+              </button>)}
+            </div>
+          </TextPresetPane>}
           {tab === 'motion' && <MotionPane text={draft} onChange={updatePhase} onTune={updateTuning} clipTiming={timing}
             onPlayFull={playFull} onPlayEffect={playEffect} />}
           {tab === 'placement' && <PlacementPane placement={draft.placement} update={updatePlacement}
@@ -305,7 +321,7 @@ export default function CaptionEditor({ text, settings, background, onApply, onC
     </div>
     {!formatEdit && <footer className="gradient-footer">
       <button type="button" className="button" onClick={() => dialog.current.close()}>Mégse</button>
-      <button type="button" className="button primary" onClick={() => { onApply(caption); dialog.current.close(); }}>Alkalmazás</button>
+      <button type="button" className="button primary" onClick={() => { onApply(caption, draftWidth); dialog.current.close(); }}>Alkalmazás</button>
     </footer>}
   </dialog>, document.body);
 }

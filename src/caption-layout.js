@@ -85,7 +85,6 @@ function wrapParagraph(ctx, paragraph, normal, scale, maxWidth) {
   return lines;
 }
 
-const glyphEffects = new Set(['wave', 'lens', 'shimmer']);
 const pulse = (distance, span) => Math.max(0, 1 - Math.abs(distance) / span) ** 2;
 
 function spaceGlyphs(ctx, parts) {
@@ -122,6 +121,68 @@ function justifyLine(line, width) {
 
 const alignOffset = { left: 0, center: 0.5, right: 1, justify: 0 };
 
+function paintLine(ctx, line, offset, baseline, visible, fill) {
+  for (const part of line.parts) {
+    if (visible <= 0) break;
+    ctx.font = part.font;
+    ctx.fillStyle = fill ?? part.color;
+    if (line.gap) {
+      ctx.textAlign = 'center';
+      for (let index = 0; index < Math.min(visible, part.glyphs.length); index += 1) {
+        const x = offset + part.at + part.advances[index] + line.gap * part.spaces[index];
+        ctx.fillText(part.glyphs[index].letter, x, baseline);
+      }
+      ctx.textAlign = 'left';
+    } else {
+      const text = visible >= part.glyphs.length ? part.text : part.glyphs.slice(0, visible).map(({ letter }) => letter).join('');
+      if (text) ctx.fillText(text, offset + part.at, baseline);
+    }
+    visible -= part.glyphs.length;
+  }
+}
+
+function shimmerHighlights(ctx, lines) {
+  const letters = lines.flatMap((line) => line.parts.flatMap((part) =>
+    part.glyphs.flatMap(({ letter }, index) => letter.trim() ? [{ line, part, index }] : [])));
+  for (const time of [0.25, 0.5, 0.75]) {
+    const spot = letters[Math.round((letters.length - 1) * time)];
+    if (!spot) break;
+    const { line, part, index } = spot;
+    ctx.font = part.font;
+    const glyph = ctx.measureText(part.glyphs[index].letter);
+    const prefix = part.glyphs.slice(0, index + 1).map(({ letter }) => letter).join('');
+    const center = line.gap ? part.advances[index] + line.gap * part.spaces[index]
+      : ctx.measureText(prefix).width - glyph.width / 2;
+    (line.highlights ??= []).push({ time, x: part.at + center, y: -glyph.actualBoundingBoxAscent * 0.78 });
+  }
+}
+
+function paintGlint(ctx, x, y, size, opacity) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.globalAlpha *= opacity;
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+  glow.addColorStop(0, '#eaf5ff');
+  glow.addColorStop(0.3, '#badbff8c');
+  glow.addColorStop(1, '#badbff00');
+  ctx.fillStyle = glow;
+  ctx.fillRect(-size, -size, size * 2, size * 2);
+  ctx.fillStyle = '#fff';
+  const core = size * 0.1;
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.lineTo(core, -core);
+  ctx.lineTo(size * 0.76, 0);
+  ctx.lineTo(core, core);
+  ctx.lineTo(0, size);
+  ctx.lineTo(-core, core);
+  ctx.lineTo(-size * 0.76, 0);
+  ctx.lineTo(-core, -core);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 export function layoutCaption(ctx, data, width, height, scrolling = false, scrollFontScale = 1) {
   const baseSize = Math.min(width * 0.092, height * 0.158) * (scrolling ? 0.42 * scrollFontScale : 1);
   const { normal, paragraphs } = styledParagraphs(data, baseSize);
@@ -138,13 +199,16 @@ export function layoutCaption(ctx, data, width, height, scrolling = false, scrol
   const maxWidth = lines.some(({ alignment }) => alignment) ? width * 0.82 : Math.max(...lines.map((line) => line.width));
   const fontSize = Math.max(...lines.map((line) => line.size));
   let count = 0;
-  const animateGlyphs = glyphEffects.has(data.middle?.effect);
+  const wave = data.middle?.effect === 'wave';
   for (const line of lines) {
     line.start = count;
-    for (const part of line.parts) count += part.glyphs.length;
+    line.glyphCount = line.parts.reduce((sum, part) => sum + part.glyphs.length, 0);
+    count += line.glyphCount;
     if (line.alignment === 'justify') line.gap = justifyLine(line, maxWidth);
-    if (animateGlyphs || line.gap) spaceGlyphs(ctx, line.parts);
+    line.renderWidth = line.gap ? maxWidth : line.width;
+    if (wave || line.gap) spaceGlyphs(ctx, line.parts);
   }
+  if (data.middle?.effect === 'shimmer') shimmerHighlights(ctx, lines);
   const placement = data.placement ?? basePlacement;
   const { align, vertical } = captionAnchors[placement.anchor];
   const x = width * (0.5 + align * 0.42 + placement.x / 100);
@@ -178,6 +242,86 @@ export function layoutCaption(ctx, data, width, height, scrolling = false, scrol
   const projectedY = corners.map(([, dy]) => pivot[1] + dy);
   const minX = Math.min(...projectedX);
   const minY = Math.min(...projectedY);
+  let lensCanvas;
+
+  function paintLens(line, offset, baseline, visible, center, radius, amount) {
+    const pad = line.size * 0.45;
+    const start = Math.floor(Math.max(center - radius, offset - pad));
+    const end = Math.ceil(Math.min(center + radius, offset + line.renderWidth + pad));
+    // Capture the shaped line only in the affected band, then stretch it around the moving focus.
+    lensCanvas ??= document.createElement('canvas');
+    const height = Math.ceil(line.height + pad * 2);
+    if (lensCanvas.width !== end - start) lensCanvas.width = end - start;
+    if (lensCanvas.height !== height) lensCanvas.height = height;
+    const lensContext = lensCanvas.getContext('2d');
+    lensContext.clearRect(0, 0, lensCanvas.width, height);
+    lensContext.textAlign = 'left';
+    lensContext.textBaseline = 'alphabetic';
+    const sourceBaseline = line.ascent + pad;
+    paintLine(lensContext, line, offset - start, sourceBaseline, visible);
+
+    const top = baseline - sourceBaseline * (1 + amount);
+    const paintedHeight = height * (1 + amount);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(Math.min(offset - pad, start), top, Math.max(0, start - offset + pad), paintedHeight);
+    ctx.rect(end, top, Math.max(0, offset + line.renderWidth + pad - end), paintedHeight);
+    ctx.clip();
+    paintLine(ctx, line, offset, baseline, visible);
+    ctx.restore();
+
+    const stretch = (x) => {
+      const relative = x - center;
+      return x + relative * amount * Math.max(0, 1 - Math.abs(relative) / radius) ** 3;
+    };
+    const step = Math.max(1, Math.ceil((end - start) / 42));
+    for (let x = start; x < end; x += step) {
+      const next = Math.min(x + step, end);
+      const enlarged = 1 + amount * pulse((x + next) / 2 - center, radius);
+      ctx.drawImage(lensCanvas, x - start, 0, next - x, lensCanvas.height,
+        stretch(x), baseline - sourceBaseline * enlarged, stretch(next) - stretch(x), lensCanvas.height * enlarged);
+    }
+  }
+
+  function paintWave(line, offset, baseline, visible, motion, intensity, envelope, cycles) {
+    let glyphIndex = line.start;
+    ctx.textAlign = 'center';
+    for (const part of line.parts) {
+      if (visible <= 0) break;
+      ctx.font = part.font;
+      ctx.fillStyle = part.color;
+      for (let index = 0; index < Math.min(visible, part.glyphs.length); index += 1) {
+        const x = offset + part.at + part.advances[index] + (line.gap ? line.gap * part.spaces[index] : 0);
+        const y = Math.sin(glyphIndex * 0.55 - motion * Math.PI * 2 * cycles) * line.size * 0.23 * envelope * intensity;
+        ctx.fillText(part.glyphs[index].letter, x, baseline + y);
+        glyphIndex += 1;
+      }
+      visible -= part.glyphs.length;
+    }
+    ctx.textAlign = 'left';
+  }
+
+  function paintShimmer(line, offset, baseline, visible, center, radius, intensity, envelope, motion) {
+    if (center + radius > offset && center - radius < offset + line.renderWidth) {
+      const lean = radius * 0.16;
+      const band = ctx.createLinearGradient(center - radius, baseline - lean, center + radius, baseline + lean);
+      const brightness = Math.min(0.94, intensity * envelope * 0.77);
+      band.addColorStop(0, '#d8ebff00');
+      band.addColorStop(0.5, `rgba(216, 235, 255, ${brightness})`);
+      band.addColorStop(1, '#d8ebff00');
+      ctx.save();
+      ctx.shadowColor = '#a6cdff';
+      ctx.shadowBlur = line.size * 0.24;
+      paintLine(ctx, line, offset, baseline, visible, band);
+      ctx.restore();
+    }
+    for (const { time, x, y } of line.highlights ?? []) {
+      const flash = pulse(motion - time, 0.075);
+      if (flash <= 0) continue;
+      const size = line.size * (0.12 + 0.11 * Math.sqrt(flash));
+      paintGlint(ctx, offset + x, baseline + y, size, Math.min(1, flash * intensity * 1.15));
+    }
+  }
 
   return {
     x, y, rotation, fontSize,
@@ -200,7 +344,8 @@ export function layoutCaption(ctx, data, width, height, scrolling = false, scrol
       let lineTop = top;
       const envelope = Math.sin(Math.PI * motion) ** 0.7;
       const intensity = (options?.intensity ?? 100) / 100;
-      const perGlyph = glyphEffects.has(middle);
+      const span = options?.detail ?? 4;
+      const travel = motion * (count + 2 * span) - span;
       for (const [index, line] of lines.entries()) {
         if (visible <= 0) return;
         const baseline = lineTop + line.ascent;
@@ -209,7 +354,7 @@ export function layoutCaption(ctx, data, width, height, scrolling = false, scrol
         const projected = pivot[1] + delta * foreshorten / distance;
         lineTop += line.height;
         if (scrolling && (distance <= 0 || delta + line.height < planeTop || delta - line.height > planeBottom)) {
-          visible -= line.parts.reduce((sum, part) => sum + part.glyphs.length, 0);
+          visible -= line.glyphCount;
           continue;
         }
         ctx.save();
@@ -225,42 +370,16 @@ export function layoutCaption(ctx, data, width, height, scrolling = false, scrol
           ctx.scale(1 + 0.10 * strength, 1);
         }
         const offset = left + (maxWidth - line.width) * (alignOffset[line.alignment] ?? (align + 1) / 2);
-        let glyphIndex = line.start;
-        for (const part of line.parts) {
-          if (visible <= 0) break;
-          ctx.font = part.font;
-          ctx.fillStyle = part.color;
-          if (perGlyph || line.gap) {
-            ctx.textAlign = 'center';
-            for (let letterIndex = 0; letterIndex < Math.min(visible, part.glyphs.length); letterIndex += 1) {
-              const { letter } = part.glyphs[letterIndex];
-              const span = options?.detail ?? 4;
-              const travel = motion * (count + 2 * span) - span;
-              const strength = pulse(glyphIndex - travel, span) * envelope * intensity;
-              const x = offset + part.at + part.advances[letterIndex] + (line.gap ? line.gap * part.spaces[letterIndex] : 0);
-              ctx.save();
-              if (middle === 'lens') {
-                ctx.translate(x, baseline);
-                ctx.scale(1 + 0.55 * strength, 1 + 0.55 * strength);
-                ctx.fillText(letter, 0, 0);
-              } else {
-                if (middle === 'shimmer') {
-                  ctx.shadowColor = '#b4dcff';
-                  ctx.shadowBlur = line.size * 0.5 * strength;
-                }
-                const y = middle === 'wave' ? Math.sin(glyphIndex * 0.55 - motion * Math.PI * 2 * options.detail) * line.size * 0.23 * envelope * intensity : 0;
-                ctx.fillText(letter, x, baseline + y);
-              }
-              ctx.restore();
-              glyphIndex += 1;
-            }
-            ctx.textAlign = 'left';
-          } else {
-            const text = visible >= part.glyphs.length ? part.text : part.glyphs.slice(0, visible).map(({ letter }) => letter).join('');
-            if (text) ctx.fillText(text, offset + part.at, baseline);
-          }
-          visible -= part.glyphs.length;
-        }
+        const advance = line.renderWidth / Math.max(1, line.glyphCount);
+        const center = offset + (travel - line.start + 0.5) * advance;
+        const radius = span * advance;
+        const withinLens = middle === 'lens' && envelope > 0.001 && radius >= 1
+          && center + radius > offset && center - radius < offset + line.renderWidth;
+        if (withinLens) paintLens(line, offset, baseline, visible, center, radius, intensity * envelope * 0.55);
+        else if (middle === 'wave') paintWave(line, offset, baseline, visible, motion, intensity, envelope, span);
+        else paintLine(ctx, line, offset, baseline, visible);
+        if (middle === 'shimmer' && radius > 0) paintShimmer(line, offset, baseline, visible, center, radius, intensity, envelope, motion);
+        visible -= line.glyphCount;
         ctx.restore();
       }
     },

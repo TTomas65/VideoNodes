@@ -43,6 +43,29 @@ export const defaults = {
   transition: { effect: 'dissolve', seconds: 0.8, tuning: {} },
 };
 
+export function readTextSettings(data = {}) {
+  const text = typeof data.text === 'string' ? data.text.slice(0, maxCaptionLength) : defaults.text.text;
+  const runs = readTextRuns(data.runs, text.length);
+  const alignments = readCaptionAlignments(data.alignments, text.split('\n').length);
+  const placement = readPlacement(data.placement);
+  const middle = readCaptionPhase('middle', data.middle);
+  const exit = readCaptionPhase('exit', data.exit);
+  const motionTuning = readMotionTuning(data.motionTuning);
+  return {
+    text,
+    font: readCaptionFont(data.font) ?? defaults.text.font,
+    color: hexColor(data.color, defaults.text.color),
+    effect: Object.hasOwn(entranceEffects, data.effect) ? data.effect : defaults.text.effect,
+    seconds: range(data.seconds, 0.1, maxPhaseSeconds, defaults.text.seconds),
+    ...(middle && { middle }),
+    ...(exit && { exit }),
+    ...(motionTuning && { motionTuning }),
+    ...(runs.length && { runs }),
+    ...(Object.keys(alignments).length && { alignments }),
+    ...(placement && { placement }),
+  };
+}
+
 export const makeNode = (type, position, id = crypto.randomUUID()) => ({
   id, type, position, data: { ...defaults[type] }, dragHandle: '.node-header',
   width: cardWidths[type],
@@ -125,28 +148,7 @@ export function readProject(value) {
     }, item.id);
     node.width = range(item.width, minCardWidths[item.type], maxCardWidth, cardWidths[item.type]);
     const data = item.data ?? {};
-    if (item.type === 'text') {
-      const text = typeof data.text === 'string' ? data.text.slice(0, maxCaptionLength) : defaults.text.text;
-      const runs = readTextRuns(data.runs, text.length);
-      const alignments = readCaptionAlignments(data.alignments, text.split('\n').length);
-      const placement = readPlacement(data.placement);
-      const middle = readCaptionPhase('middle', data.middle);
-      const exit = readCaptionPhase('exit', data.exit);
-      const motionTuning = readMotionTuning(data.motionTuning);
-      Object.assign(node.data, {
-        text,
-        font: readCaptionFont(data.font) ?? defaults.text.font,
-        color: hexColor(data.color, defaults.text.color),
-        effect: Object.hasOwn(entranceEffects, data.effect) ? data.effect : defaults.text.effect,
-        seconds: range(data.seconds, 0.1, maxPhaseSeconds, defaults.text.seconds),
-        ...(middle && { middle }),
-        ...(exit && { exit }),
-        ...(motionTuning && { motionTuning }),
-        ...(runs.length && { runs }),
-        ...(Object.keys(alignments).length && { alignments }),
-        ...(placement && { placement }),
-      });
-    }
+    if (item.type === 'text') node.data = readTextSettings(data);
     if (item.type === 'render') Object.assign(node.data, {
       resolution: Object.hasOwn(resolutions, data.resolution) ? data.resolution : defaults.render.resolution,
       fps: [24, 25, 30, 60].includes(data.fps) ? data.fps : defaults.render.fps,

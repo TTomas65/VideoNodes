@@ -29,6 +29,10 @@ A **Szövegek szerkesztése** ablakban kijelölt betűkön vagy több soron kül
 
 A **Betűtípus** választó alapértelmezett forrása a Google Fonts. A lista a betűtípus saját betűivel írja ki a nevét, és a látható webfontmintákat tölti be először. A szövegszerkesztő oldalsávjában több betűtípust is kipróbálhatsz a kijelölésen vagy az egész feliraton. A **Betű alkalmazása** elfogadja a próbát, a **Mégsem** visszaállítja a korábbi betűtípust. Az Inter a program része. Helyi Windows- és Linux-szerveren megnyitható a **Gépen telepített** lista is. A projekt az egyes betűtípusok nevét és forrását tárolja. Másik gépen a választott helyi betűtípusnak is telepítve kell lennie.
 
+A **Sablonok** fül **Szövegsablonok** nézete elmenti a betűformázást, az igazítást és a pozíciót. Betöltéskor ezeket az aktuális szövegre alkalmazza. Üres feliratnál a mentett mintaszöveget tölti be. A **Teljes kártyamentések** nézet a szöveget, a formázást, az animációs fázisokat, a finomhangolást és a kártyaszélességet együtt tárolja. A betöltött beállításokat a szerkesztő **Alkalmazás** gombja teszi a kártyára.
+
+A helyi szerver mindkét típusú mentést előnézeti képpel a `presets/text` mappába írja. A **Levétel** elrejti a mentést a galériában. A **Levett sablonok** nézetből bármikor visszahelyezhető.
+
 A Szöveg kártyán és a **Mozgás** fülön külön állítható a megjelenés, a köztes animáció és az eltűnés. A megjelenés alapértéke 1,2 mp, a kikapcsolt fázisoké 0 mp. A köztes fázisban az **Effekt hossza** az animáció lefutása, a **Köztes teljes ideje** az effekt és az azt követő mozdulatlan tartás összege. A teljes köztes idő legalább az effekt hossza. A Szöveg kártya előnézete mindig a megjelenés, a teljes köztes idő és az eltűnés összegét játssza le. A mozgásminták automatikusan elindulnak. A kiválasztott effekt intenzitása, dinamikája és típustól függően például az iránya, a hullámok száma vagy a nagyítólencse szélessége állítható. A **Stábfelirat-görgetés** követi a felirat forgatását és perspektíváját. Ha köztes vagy eltűnési fázis követi, a görgetés ott áll meg, ahol a feliratot elhelyezted.
 
 A csúszkák alatti **Teljes animáció** a felirat minden fázisát lejátssza a nagy előnézetben. Az **Effekt animáció** az ott kiválasztott fázis effektjét mutatja a beállított effekthosszal.
@@ -51,6 +55,7 @@ Az **FFmpeg render** kártya **Háttér** bemenete a jelenetek közös hátteré
 
 - **Képfeltöltés.** Válassz böngészőben megnyitható képet legfeljebb 25 MB méretig. Alakítsd ki az illesztést, a képkivágást, a nagyítást, az átlátszatlanságot és a mögöttes alapszínt. A böngésző állóképpé alakítja a fájlt a mentéshez.
 - **Színátmenet és animáció.** Nyisd meg a **Háttér szerkesztése** ablakot. Válassz mintát, vagy állíts be legfeljebb öt színt, lineáris vagy radiális átmenetet, illetve fényfoltokat. A statikus mód mellett a forgatás, a sodródás és a pulzálás is beállítható. Az **Alkalmazás** átveszi az élő előnézet beállításait.
+- **Generált minták.** A bélyegképek között a háttér formáját választhatod ki, a **Stílusok** részben pedig az adott forma előre beállított változatait. Az **Ametiszt hullámhoz** például a **Kék prizma**, a **Zöld fénycsíkok** és a **Smaragdhullám** tartozik. Szerkeszthetők a színek, az animáció és a fénytörés. A **Statikus** mód a beállított kezdőfázist rögzíti. A mintabeállítások a projekttel együtt mentődnek. [Gradient Lab](https://www.thesmallsquare.com/tools/gradient-lab)
 
 A feltöltött háttérképet a böngésző menti, és a JSON-export is tartalmazza. A kép megjelenik a szövegelőnézetben, a videólejátszóban és a kész MP4- vagy WebM-fájlban.
 

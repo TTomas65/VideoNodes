@@ -1,3 +1,5 @@
+import { defaultPattern, paintBackgroundPattern, readBackgroundPattern } from './background-patterns';
+
 export const gradientShapes = { linear: 'Lineáris', radial: 'Radiális', lights: 'Fényfoltok' };
 export const gradientMotion = { still: 'Statikus', rotate: 'Forgatás', drift: 'Sodródás', pulse: 'Pulzálás' };
 export const imageFits = { cover: 'Kitöltés', contain: 'Teljes kép', stretch: 'Nyújtás' };
@@ -40,8 +42,9 @@ export function readBackground(value) {
     throw new Error('A projekt érvénytelen háttérképet tartalmaz.');
   }
   return {
-    mode: value.mode === 'image' ? 'image' : 'gradient',
+    mode: value.mode === 'image' || value.mode === 'pattern' ? value.mode : 'gradient',
     gradient: readGradient(value.gradient),
+    ...(value.mode === 'pattern' || value.pattern ? { pattern: readBackgroundPattern(value.pattern) } : {}),
     image: image ? { src: image.src, name: typeof image.name === 'string' ? image.name.slice(0, 120) : 'Háttérkép' } : null,
     fit: Object.hasOwn(imageFits, value.fit) ? value.fit : defaultBackground.fit,
     x: range(value.x, 0, 100, defaultBackground.x), y: range(value.y, 0, 100, defaultBackground.y),
@@ -80,12 +83,18 @@ export async function prepareImage(file) {
   }
 }
 
-export const movingBackground = (background) => background?.mode === 'gradient' && background.gradient.motion !== 'still';
-export const usableBackground = (background) => background && (background.mode === 'gradient' || Boolean(background.image));
+export const movingBackground = (background) => background?.mode === 'pattern'
+  ? (background.pattern ?? defaultPattern).animated
+  : background?.mode === 'gradient' && background.gradient.motion !== 'still';
+export const usableBackground = (background) => background && (background.mode !== 'image' || Boolean(background.image));
 export const backgroundImageSources = (backgrounds) => [...new Set(backgrounds.flatMap((background) =>
   background?.mode === 'image' && background.image ? [background.image.src] : []))];
 
 export function paintBackground(ctx, width, height, background, image, time) {
+  if (background.mode === 'pattern') {
+    paintBackgroundPattern(ctx, width, height, background.pattern ?? defaultPattern, time);
+    return;
+  }
   if (background.mode === 'image') {
     ctx.fillStyle = background.matte;
     ctx.fillRect(0, 0, width, height);

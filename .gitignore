@@ -4,4 +4,5 @@ public/ffmpeg/
 .local-preview/
 outputs/
 backups/saves/
+/presets/text/
 *.log

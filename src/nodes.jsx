@@ -2,7 +2,7 @@ import { createContext, lazy, Suspense, useContext, useEffect, useId, useMemo, u
 import { createPortal } from 'react-dom';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, Handle, NodeResizeControl, Position } from '@xyflow/react';
 import { Clapperboard, Cog, Download, Eye, FastForward, Image, Maximize, Pause, Play, Repeat2, RotateCcw, Settings2, Shuffle, Trash2, Type, X } from 'lucide-react';
-import { backgroundPort, cardWidths, defaults, formats, label, linkedBackground, maxCardWidth, minCardWidths, outgoingRender, qualities, renderSources, resolutions, scenePorts, upstream } from './project';
+import { backgroundPort, cardWidths, defaults, formats, label, linkedBackground, maxCardWidth, minCardWidths, outgoingRender, qualities, readTextSettings, renderSources, resolutions, scenePorts, upstream } from './project';
 import { BackgroundFields } from './background-node';
 import { Color, Seconds, Select } from './fields';
 import { FontPicker } from './font-picker';
@@ -64,8 +64,8 @@ function Card({ id, type, selected, children, input, output, sceneControls }) {
   </article>;
 }
 
-function TextNode({ id, data, selected }) {
-  const { updateNode, nodes, edges } = useContext(GraphContext);
+function TextNode({ id, data, selected, width }) {
+  const { updateNode, resizeNode, nodes, edges } = useContext(GraphContext);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const set = (key, value) => updateNode(id, key, value);
@@ -122,17 +122,11 @@ function TextNode({ id, data, selected }) {
     </div>
     {previewOpen && <TextPreviewDialog text={data} settings={settings} background={background} onClose={() => setPreviewOpen(false)} />}
     {editorOpen && <Suspense fallback={null}>
-      <CaptionEditor text={data} settings={settings} background={background} onClose={() => setEditorOpen(false)} onApply={(caption) => {
-        set('text', caption.text);
-        set('color', caption.color);
-        set('runs', caption.runs.length ? caption.runs : undefined);
-        set('alignments', Object.keys(caption.alignments ?? {}).length ? caption.alignments : undefined);
-        set('motionTuning', caption.motionTuning);
-        set('placement', caption.placement ?? undefined);
-        set('effect', caption.effect);
-        set('seconds', caption.seconds);
-        set('middle', caption.middle);
-        set('exit', caption.exit);
+      <CaptionEditor text={data} width={width ?? cardWidths.text} settings={settings} background={background}
+        onClose={() => setEditorOpen(false)} onApply={(caption, nextWidth) => {
+        const next = readTextSettings(caption);
+        for (const key of new Set([...Object.keys(data), ...Object.keys(next)])) set(key, next[key]);
+        resizeNode(id, nextWidth);
       }} />
     </Suspense>}
   </Card>;
